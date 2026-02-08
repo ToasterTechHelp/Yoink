@@ -1,0 +1,33 @@
+[project]
+name = "yoink"
+version = "0.1.0"
+description = "Extract components from lecture notes using AI-powered document layout detection."
+requires-python = ">=3.12"
+dependencies = [
+    "doclayout-yolo",
+    "huggingface_hub",
+    "opencv-python-headless",
+    "PyMuPDF",
+    "Pillow",
+    "pydantic>=2.0",
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "aiosqlite",
+]
+
+[project.scripts]
+yoink = "yoink.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+]
+
+[tool.uv]
+package = true

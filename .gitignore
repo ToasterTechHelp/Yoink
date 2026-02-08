@@ -1,0 +1,21 @@
+# --- OS Files ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# --- IDEs ---
+.vscode/
+.idea/
+
+# --- Logs & Temp ---
+*.log
+tmp/
+temp/
+
+# --- Documentation ---
+*.md
+*.pdf
+
+# --- Frontend ---
+frontend/

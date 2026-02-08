@@ -1,0 +1,29 @@
+# --- Python Junk ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+yoink.egg-info/
+dist/
+build/
+
+# --- Virtual Environments ---
+.venv/
+venv/
+ENV/
+
+# --- AI Models & Weights ---
+*.pt
+*.pth
+
+# --- Database & User Data ---
+yoink_jobs.db
+uploads/
+job_data/
+
+# --- Test Artifacts ---
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
