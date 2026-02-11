@@ -1,0 +1,35 @@
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Runtime data
+yoink_jobs.db
+uploads/
+job_data/
+static/
+
+# AI model weights (downloaded at build time)
+*.pt
+*.pth
+
+# Environment secrets
+.env
+.env.local
+.env*.local
+
+# Dev/test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+__pycache__/
+*.py[cod]
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+Dockerfile
+.dockerignore

@@ -21,6 +21,13 @@ ENV/
 yoink_jobs.db
 uploads/
 job_data/
+static/
+
+# --- Environment ---
+.env
+.env.local
+.env*.local
+!.env.example
 
 # --- Test Artifacts ---
 .pytest_cache/

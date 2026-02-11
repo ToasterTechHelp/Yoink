@@ -1,15 +1,20 @@
 """Sequential background worker for processing extraction jobs."""
 
 import asyncio
+import base64
+import json
 import logging
 import shutil
 from pathlib import Path
 
 from yoink.api.jobs import JobStore
+from yoink.api.storage import save_job_to_supabase, upload_components_to_supabase
 from yoink.extractor import LayoutExtractor
 from yoink.pipeline import run_pipeline
 
 logger = logging.getLogger(__name__)
+
+GUEST_STATIC_DIR = Path("./static/guest")
 
 
 class ExtractionWorker:
@@ -26,6 +31,8 @@ class ExtractionWorker:
         job_store: JobStore,
         extractor: LayoutExtractor,
         output_base_dir: str = "./job_data",
+        supabase=None,
+        supabase_url: str = "",
     ):
         """
         Initialize the extraction worker.
@@ -34,10 +41,14 @@ class ExtractionWorker:
             job_store: Database interface for job persistence
             extractor: The YOLO-based layout extractor instance
             output_base_dir: Directory where job outputs will be stored
+            supabase: Supabase client (service_role) or None
+            supabase_url: Supabase project URL for constructing public URLs
         """
         self._job_store = job_store
         self._extractor = extractor
         self._output_base_dir = Path(output_base_dir)
+        self._supabase = supabase
+        self._supabase_url = supabase_url
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._task: asyncio.Task | None = None
 
@@ -151,7 +162,18 @@ class ExtractionWorker:
             result_filename = Path(job["upload_path"]).stem + "_extracted.json"
             result_path = output_dir / result_filename
 
-            # Mark job as completed with final results
+            user_id = job.get("user_id")
+
+            if user_id and self._supabase:
+                # --- User flow: upload to Supabase Storage + DB ---
+                await self._handle_user_result(
+                    user_id, job_id, job["filename"], result, result_path,
+                )
+            else:
+                # --- Guest flow: save PNGs to /static/guest/{job_id}/ ---
+                await self._handle_guest_result(job_id, result, result_path)
+
+            # Mark SQLite job as completed
             await self._job_store.update_status(
                 job_id,
                 "completed",
@@ -172,6 +194,61 @@ class ExtractionWorker:
                 "failed",
                 error=str(e),
             )
+
+    async def _handle_guest_result(
+        self, job_id: str, result: dict, result_path: Path,
+    ) -> None:
+        """Save component images as PNGs to the guest static directory."""
+        guest_dir = GUEST_STATIC_DIR / job_id
+        guest_dir.mkdir(parents=True, exist_ok=True)
+
+        with open(result_path, "r", encoding="utf-8") as f:
+            result_data = json.load(f)
+
+        for page in result_data.get("pages", []):
+            for comp in page.get("components", []):
+                b64_data = comp.get("base64", "")
+                if not b64_data:
+                    continue
+                image_bytes = base64.b64decode(b64_data)
+                png_path = guest_dir / f"{comp['id']}.png"
+                png_path.write_bytes(image_bytes)
+
+        logger.info("Guest job %s: saved %d PNGs to %s", job_id, result["total_components"], guest_dir)
+
+    async def _handle_user_result(
+        self,
+        user_id: str,
+        job_id: str,
+        filename: str,
+        result: dict,
+        result_path: Path,
+    ) -> None:
+        """Upload component images to Supabase Storage and save job to Supabase DB."""
+        with open(result_path, "r", encoding="utf-8") as f:
+            result_data = json.load(f)
+
+        # Upload PNGs to Supabase Storage
+        components = await upload_components_to_supabase(
+            user_id=user_id,
+            job_id=job_id,
+            result_data=result_data,
+            supabase=self._supabase,
+            supabase_url=self._supabase_url,
+        )
+
+        # Insert row into Supabase jobs table
+        await save_job_to_supabase(
+            user_id=user_id,
+            job_id=job_id,
+            title=filename,
+            total_pages=result["total_pages"],
+            total_components=result["total_components"],
+            components=components,
+            supabase=self._supabase,
+        )
+
+        logger.info("User job %s: uploaded to Supabase for user %s", job_id, user_id)
 
     @staticmethod
     def cleanup_job_files(upload_path: str | None, result_path: str | None) -> None:

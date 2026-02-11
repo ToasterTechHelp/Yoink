@@ -7,19 +7,28 @@ import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from supabase import create_client
 
 from yoink.api.jobs import JobStore
 from yoink.api.worker import ExtractionWorker
 from yoink.extractor import LayoutExtractor
 
+load_dotenv()
+
 logger = logging.getLogger(__name__)
 
 JOB_DATA_DIR = os.environ.get("YOINK_JOB_DATA_DIR", "./job_data")
 UPLOAD_DIR = os.environ.get("YOINK_UPLOAD_DIR", "./uploads")
+STATIC_DIR = os.environ.get("YOINK_STATIC_DIR", "./static")
 DB_PATH = os.environ.get("YOINK_DB_PATH", "yoink_jobs.db")
 CLEANUP_INTERVAL_SECONDS = 3600  # 1 hour
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
 
 async def _cleanup_loop(job_store: JobStore) -> None:
@@ -51,6 +60,16 @@ async def lifespan(app: FastAPI):
     # Ensure directories exist
     Path(JOB_DATA_DIR).mkdir(parents=True, exist_ok=True)
     Path(UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+    Path(STATIC_DIR).mkdir(parents=True, exist_ok=True)
+    Path(STATIC_DIR, "guest").mkdir(parents=True, exist_ok=True)
+
+    # Init Supabase client (service_role for backend operations)
+    supabase = None
+    if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+        supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        logger.info("Supabase client initialized")
+    else:
+        logger.warning("Supabase credentials not set — user features disabled")
 
     # Init job store
     job_store = JobStore(db_path=DB_PATH)
@@ -66,6 +85,8 @@ async def lifespan(app: FastAPI):
         job_store=job_store,
         extractor=extractor,
         output_base_dir=JOB_DATA_DIR,
+        supabase=supabase,
+        supabase_url=SUPABASE_URL,
     )
     worker.start()
 
@@ -76,6 +97,8 @@ async def lifespan(app: FastAPI):
     app.state.job_store = job_store
     app.state.worker = worker
     app.state.extractor = extractor
+    app.state.supabase = supabase
+    app.state.supabase_url = SUPABASE_URL
 
     yield
 
@@ -107,6 +130,10 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Mount static files for guest component images
+    Path(STATIC_DIR).mkdir(parents=True, exist_ok=True)
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     # Import and mount routes
     from yoink.api.routes import router

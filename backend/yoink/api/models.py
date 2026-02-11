@@ -50,6 +50,7 @@ class ResultMetadataResponse(BaseModel):
     source_file: str
     total_pages: int
     total_components: int
+    is_guest: bool = False
 
 
 class ComponentBatchResponse(BaseModel):
@@ -59,6 +60,25 @@ class ComponentBatchResponse(BaseModel):
     total: int
     has_more: bool
     components: list[dict]
+
+
+class ComponentOut(BaseModel):
+    """A single extracted component with a URL (no base64)."""
+    id: int
+    page_number: int
+    category: str
+    original_label: str = ""
+    confidence: float = 0.0
+    bbox: list = []
+    url: str
+
+
+class GuestResultResponse(BaseModel):
+    """Full result for guest jobs — metadata + component URLs."""
+    source_file: str
+    total_pages: int
+    total_components: int
+    components: list[ComponentOut]
 
 
 class ErrorResponse(BaseModel):

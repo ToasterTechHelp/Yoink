@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 JOBS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
     id           TEXT PRIMARY KEY,
+    user_id      TEXT,
     status       TEXT NOT NULL DEFAULT 'queued',
     filename     TEXT NOT NULL,
     upload_path  TEXT,
@@ -81,6 +82,11 @@ class JobStore:
                 "ALTER TABLE jobs ADD COLUMN total_components INTEGER DEFAULT 0"
             )
             logger.info("Migration: added total_components column to jobs table")
+        if "user_id" not in columns:
+            await self._db.execute(
+                "ALTER TABLE jobs ADD COLUMN user_id TEXT"
+            )
+            logger.info("Migration: added user_id column to jobs table")
 
     async def close(self) -> None:
         """Close the database connection gracefully."""
@@ -88,13 +94,16 @@ class JobStore:
             await self._db.close()
             self._db = None
 
-    async def create_job(self, filename: str, upload_path: str) -> str:
+    async def create_job(
+        self, filename: str, upload_path: str, user_id: str | None = None,
+    ) -> str:
         """
         Create a new extraction job in 'queued' status.
         
         Args:
             filename: Original name of the uploaded file
             upload_path: Path where the uploaded file is stored
+            user_id: Supabase user UUID (None for guests)
             
         Returns:
             The generated job ID (hex UUID)
@@ -102,12 +111,12 @@ class JobStore:
         job_id = uuid.uuid4().hex
         now = datetime.now(timezone.utc).isoformat()
         await self._db.execute(
-            """INSERT INTO jobs (id, status, filename, upload_path, created_at, updated_at)
-               VALUES (?, 'queued', ?, ?, ?, ?)""",
-            (job_id, filename, upload_path, now, now),
+            """INSERT INTO jobs (id, user_id, status, filename, upload_path, created_at, updated_at)
+               VALUES (?, ?, 'queued', ?, ?, ?, ?)""",
+            (job_id, user_id, filename, upload_path, now, now),
         )
         await self._db.commit()
-        logger.info("Created job %s for file '%s'", job_id, filename)
+        logger.info("Created job %s for file '%s' (user=%s)", job_id, filename, user_id or "guest")
         return job_id
 
     async def get_job(self, job_id: str) -> dict | None:
