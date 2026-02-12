@@ -33,6 +33,6 @@ RUN /app/.venv/bin/python -c "from huggingface_hub import hf_hub_download; hf_hu
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-EXPOSE 8000
+EXPOSE 7860
 
-CMD ["uvicorn", "yoink.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "yoink.api.app:app", "--host", "0.0.0.0", "--port", "7860"]
