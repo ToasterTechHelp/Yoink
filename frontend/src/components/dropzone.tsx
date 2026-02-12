@@ -89,6 +89,7 @@ export function Dropzone({ onFileSelected, disabled }: DropzoneProps) {
       </label>
 
       <p className="text-sm text-muted-foreground">or drop files here</p>
+      <p className="text-xs text-muted-foreground/60">PDFs over 100 pages will be limited to the first 100.</p>
     </div>
   );
 }

@@ -59,7 +59,8 @@ def convert_pdf(file_path: Path, output_dir: Path, dpi: int = 200) -> List[Tuple
     zoom = dpi / 72  # PyMuPDF default is 72 DPI
     matrix = fitz.Matrix(zoom, zoom)
 
-    for page_num in range(len(doc)):
+    max_pages = min(len(doc), 100)
+    for page_num in range(max_pages):
         page = doc[page_num]
         pix = page.get_pixmap(matrix=matrix)
         png_path = output_dir / f"page_{page_num + 1}.png"
