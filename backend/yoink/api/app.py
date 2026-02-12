@@ -32,14 +32,17 @@ SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
 
 async def _cleanup_loop(job_store: JobStore) -> None:
-    """Periodically clean up jobs older than 24 hours."""
+    """Periodically clean up jobs older than 12 hours."""
     while True:
         try:
             await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
-            old_jobs = await job_store.get_old_job_paths(max_age_hours=24)
+            old_jobs = await job_store.get_old_job_paths(max_age_hours=12)
             for job in old_jobs:
                 ExtractionWorker.cleanup_job_files(job.get("upload_path"), job.get("result_path"))
-            count = await job_store.cleanup_old_jobs(max_age_hours=24)
+                guest_dir = Path(STATIC_DIR, "guest", job.get("id", ""))
+                if guest_dir.exists():
+                    shutil.rmtree(guest_dir, ignore_errors=True)
+            count = await job_store.cleanup_old_jobs(max_age_hours=12)
             if count > 0:
                 logger.info("Cleanup: removed %d old jobs", count)
         except asyncio.CancelledError:
