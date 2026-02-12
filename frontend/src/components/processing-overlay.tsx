@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import Lottie from "lottie-react";
 import { Progress } from "@/components/ui/progress";
 import { useYoinkStore } from "@/store/useYoinkStore";
 
@@ -9,6 +9,15 @@ export function ProcessingOverlay() {
   const status = useYoinkStore((s) => s.activeJobStatus);
   const progress = useYoinkStore((s) => s.activeJobProgress);
   const error = useYoinkStore((s) => s.activeJobError);
+
+  const [animationData, setAnimationData] = useState<object | null>(null);
+
+  useEffect(() => {
+    fetch("/animations/processing.json")
+      .then((res) => res.json())
+      .then(setAnimationData)
+      .catch(() => setAnimationData(null));
+  }, []);
 
   if (status === "idle" || status === "completed") return null;
 
@@ -30,7 +39,11 @@ export function ProcessingOverlay() {
         ) : (
           <>
             <div className="flex items-center gap-3">
-              <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+              {animationData ? (
+                <Lottie animationData={animationData} loop autoplay className="h-16 w-16 shrink-0" />
+              ) : (
+                <div className="h-16 w-16 shrink-0" />
+              )}
               <div className="flex-1">
                 <p className="text-sm font-medium">
                   {status === "uploading" && "Uploading..."}
