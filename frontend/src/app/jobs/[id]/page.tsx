@@ -10,7 +10,7 @@ import { CategoryFilter } from "@/components/category-filter";
 import { PageJump } from "@/components/page-jump";
 import { createClient } from "@/lib/supabase/client";
 import { useYoinkStore } from "@/store/useYoinkStore";
-import { submitFeedback } from "@/lib/api";
+import { submitFeedback, getJobResult } from "@/lib/api";
 import type { ComponentData } from "@/lib/api";
 import type { SupabaseJob } from "@/store/useYoinkStore";
 
@@ -50,6 +50,33 @@ export default function ResultsPage() {
 
         const cats = new Set(guestResult.components.map((c) => c.category));
         setActiveCategories(cats);
+        setLoading(false);
+        return;
+      }
+
+      if (isGuest) {
+        try {
+          const data = await getJobResult(jobId);
+          if ("components" in data) {
+            setComponents(data.components);
+            setSourceFile(data.source_file);
+            setTotalComponents(data.total_components);
+            setTotalPages(data.total_pages);
+
+            const cats = new Set(data.components.map((c) => c.category));
+            setActiveCategories(cats);
+          } else {
+            toast.error("Guest job not found");
+            router.push("/");
+            return;
+          }
+        } catch (error) {
+          console.error(error);
+          toast.error("Failed to load guest job");
+          router.push("/");
+          return;
+        }
+
         setLoading(false);
         return;
       }
@@ -109,6 +136,11 @@ export default function ResultsPage() {
     }
     return [...map.entries()].sort(([a], [b]) => a - b);
   }, [filtered]);
+
+  // Extract visible page numbers for quick-jump bar
+  const visiblePages = useMemo(() => {
+    return grouped.map(([pageNum]) => pageNum);
+  }, [grouped]);
 
   const handleJump = (page: number) => {
     const el = pageRefs.current.get(page);
@@ -210,7 +242,7 @@ export default function ResultsPage() {
       </div>
 
       {/* Page jump */}
-      <PageJump totalPages={totalPages} onJump={handleJump} />
+      <PageJump pages={visiblePages} onJump={handleJump} />
     </div>
   );
 }

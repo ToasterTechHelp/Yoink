@@ -1,19 +1,19 @@
 "use client";
 
 interface PageJumpProps {
-  totalPages: number;
+  pages: number[];
   onJump: (page: number) => void;
   currentPage?: number;
 }
 
-export function PageJump({ totalPages, onJump, currentPage }: PageJumpProps) {
-  if (totalPages <= 1) return null;
+export function PageJump({ pages, onJump, currentPage }: PageJumpProps) {
+  if (pages.length <= 1) return null;
 
   return (
     <div className="fixed bottom-6 left-4 right-4 z-40 flex justify-center">
       <div className="max-w-full overflow-x-auto rounded-full border bg-card px-3 py-2 shadow-lg">
         <div className="flex items-center gap-1">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+          {pages.map((page) => (
             <button
               key={page}
               onClick={() => onJump(page)}

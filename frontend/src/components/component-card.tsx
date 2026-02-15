@@ -14,15 +14,18 @@ export function ComponentCard({ component }: ComponentCardProps) {
 
   const handleCopy = async () => {
     try {
-      const res = await fetch(component.url);
+      const res = await fetch(component.url, { 
+        mode: 'cors',
+        cache: 'no-store' 
+      });
       const blob = await res.blob();
       await navigator.clipboard.write([
         new ClipboardItem({ [blob.type]: blob }),
       ]);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Fallback: open image in new tab
+    } catch (error) {
+      console.error("Clipboard copy failed:", error);
       window.open(component.url, "_blank");
     }
   };
@@ -30,7 +33,7 @@ export function ComponentCard({ component }: ComponentCardProps) {
   const isText = component.category === "text";
 
   return (
-    <div className="group relative w-fit max-w-sm overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md">
+    <div className="relative w-fit max-w-sm overflow-hidden rounded-xl border bg-card">
       {/* Image — draggable with real src for iPad native drag */}
       <div className="relative flex justify-center p-2">
         <img
@@ -43,7 +46,7 @@ export function ComponentCard({ component }: ComponentCardProps) {
         <Button
           variant="secondary"
           size="icon"
-          className="absolute right-2 top-2 h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100"
+          className="absolute right-2 top-2 h-8 w-8"
           onClick={handleCopy}
         >
           {copied ? (
