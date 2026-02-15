@@ -198,20 +198,21 @@ class JobStore:
 
     async def cleanup_old_jobs(self, max_age_hours: int = 24) -> int:
         """
-        Delete jobs older than max_age_hours from the database.
+        Delete guest jobs older than max_age_hours from the database.
         
-        Used by the cleanup loop to remove stale jobs.
+        Used by the cleanup loop to remove stale guest jobs.
+        Authenticated user jobs (user_id IS NOT NULL) are preserved indefinitely.
         Note: Call get_old_job_paths() first to get paths for file cleanup.
         
         Args:
-            max_age_hours: Maximum age of jobs to keep
+            max_age_hours: Maximum age of guest jobs to keep
             
         Returns:
             Number of jobs deleted
         """
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat()
         cursor = await self._db.execute(
-            "SELECT id, upload_path, result_path FROM jobs WHERE created_at < ?",
+            "SELECT id, upload_path, result_path FROM jobs WHERE created_at < ? AND user_id IS NULL",
             (cutoff,),
         )
         old_jobs = await cursor.fetchall()
@@ -230,9 +231,10 @@ class JobStore:
 
     async def get_old_job_paths(self, max_age_hours: int = 24) -> list[dict]:
         """
-        Get file paths of jobs older than max_age_hours.
+        Get file paths of guest jobs older than max_age_hours.
         
         Used to identify files that need cleanup before deleting job records.
+        Only returns guest jobs (user_id IS NULL).
         
         Args:
             max_age_hours: Maximum age threshold
@@ -242,7 +244,7 @@ class JobStore:
         """
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat()
         cursor = await self._db.execute(
-            "SELECT id, upload_path, result_path FROM jobs WHERE created_at < ?",
+            "SELECT id, upload_path, result_path FROM jobs WHERE created_at < ? AND user_id IS NULL",
             (cutoff,),
         )
         return [dict(row) for row in await cursor.fetchall()]
