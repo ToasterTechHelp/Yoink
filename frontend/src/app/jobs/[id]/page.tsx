@@ -177,10 +177,10 @@ export default function ResultsPage() {
   }
 
   return (
-    <div className="pb-20">
+    <div className="pb-20 select-none">
       {/* Header */}
-      <div className="sticky top-14 z-30 border-b bg-background/95 backdrop-blur">
-        <div className="container mx-auto flex items-center justify-between px-4 py-3">
+      <div className="sticky top-14 z-30 border-b bg-background/95 backdrop-blur select-none">
+        <div className="container mx-auto flex items-center justify-between px-4 py-3 select-none">
           <div className="flex items-center gap-3 min-w-0">
             <Button
               variant="ghost"
@@ -204,7 +204,7 @@ export default function ResultsPage() {
         </div>
 
         {/* Category filters */}
-        <div className="container mx-auto px-4 pb-3">
+        <div className="container mx-auto px-4 pb-3 select-none">
           <CategoryFilter
             categories={allCategories}
             active={activeCategories}
@@ -214,17 +214,17 @@ export default function ResultsPage() {
       </div>
 
       {/* Component grid */}
-      <div className="container mx-auto px-4 pt-4">
+      <div className="container mx-auto px-4 pt-4 select-none">
         {grouped.map(([pageNum, comps]) => (
           <div
             key={pageNum}
             ref={(el) => {
               if (el) pageRefs.current.set(pageNum, el);
             }}
-            className="mb-8"
+            className="mb-8 select-none"
           >
-            <div className="mb-3 flex items-center gap-2">
-              <span className="rounded-md bg-muted px-2.5 py-1 text-xs font-semibold">
+            <div className="mb-3 flex items-center gap-2 select-none">
+              <span className="rounded-md bg-muted px-2.5 py-1 text-xs font-semibold select-none">
                 Page {pageNum}
               </span>
               <div className="h-px flex-1 bg-border" />

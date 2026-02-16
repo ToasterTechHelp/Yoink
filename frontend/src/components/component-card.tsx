@@ -36,7 +36,7 @@ export function ComponentCard({ component }: ComponentCardProps) {
   };
 
   return (
-    <div className="relative w-fit max-w-sm overflow-hidden rounded-xl border bg-card">
+    <div className="relative w-fit max-w-sm overflow-hidden rounded-xl border bg-card select-none">
       <div className="relative flex justify-center p-2">
         <img
           src={component.url}
@@ -47,14 +47,14 @@ export function ComponentCard({ component }: ComponentCardProps) {
         />
       </div>
 
-      <div className="flex items-center justify-between px-3 py-2">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="flex items-center justify-between px-3 py-2 select-none">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground select-none">
           {component.category}
         </span>
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+          className="h-6 w-6 select-none p-0 text-muted-foreground hover:text-foreground"
           onClick={handleCopy}
           aria-label="Copy component image"
         >

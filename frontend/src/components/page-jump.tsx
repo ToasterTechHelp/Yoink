@@ -17,7 +17,7 @@ export function PageJump({ pages, onJump, currentPage }: PageJumpProps) {
             <button
               key={page}
               onClick={() => onJump(page)}
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-medium transition-colors ${
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-medium transition-colors select-none ${
                 currentPage === page
                   ? "bg-primary text-primary-foreground"
                   : "hover:bg-muted"
