@@ -39,7 +39,7 @@ export function CategoryFilter({
               isActive
                 ? "bg-muted text-foreground"
                 : "bg-muted/50 text-muted-foreground"
-            } select-none`}
+            }`}
           >
             <span
               className={`h-3 w-3 rounded-sm ${
