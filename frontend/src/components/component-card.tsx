@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, type DragEvent } from "react";
 import { Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ComponentData } from "@/lib/api";
@@ -9,8 +9,13 @@ interface ComponentCardProps {
   component: ComponentData;
 }
 
+const TRANSPARENT_PNG_DATA_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lmV0AAAAASUVORK5CYII=";
+
 export function ComponentCard({ component }: ComponentCardProps) {
   const [copied, setCopied] = useState(false);
+  const [dragPaneKey, setDragPaneKey] = useState(0);
+  const visualImageRef = useRef<HTMLImageElement | null>(null);
 
   const handleCopy = () => {
     const imgPromise = fetch(component.url, {
@@ -35,16 +40,47 @@ export function ComponentCard({ component }: ComponentCardProps) {
       });
   };
 
+  const handleGlassPaneDragStart = (event: DragEvent<HTMLImageElement>) => {
+    const dt = event.dataTransfer;
+    dt.effectAllowed = "copy";
+    dt.setData("text/plain", component.url);
+    dt.setData("text/uri-list", component.url);
+    dt.setData("text/html", `<img src="${component.url}" alt="component image">`);
+
+    if (!visualImageRef.current) return;
+    const preview = visualImageRef.current;
+    dt.setDragImage(preview, preview.width / 2, preview.height / 2);
+  };
+
+  const handleGlassPaneDragEnd = () => {
+    window.getSelection()?.removeAllRanges();
+    // Remount the glass pane to avoid Safari leaving it in a sticky post-drag state.
+    setDragPaneKey((value) => value + 1);
+  };
+
   return (
     <div className="relative w-fit max-w-sm overflow-hidden rounded-xl border bg-card">
       <div className="relative flex justify-center p-2">
-        <img
-          src={component.url}
-          alt={`${component.category} component`}
-          className="w-full object-contain [-webkit-touch-callout:none] [-webkit-user-drag:element]"
-          draggable
-          onContextMenu={(event) => event.preventDefault()}
-        />
+        <div className="relative w-full">
+          <img
+            ref={visualImageRef}
+            src={component.url}
+            alt={`${component.category} component`}
+            className="w-full object-contain pointer-events-none"
+            draggable={false}
+          />
+          <img
+            key={dragPaneKey}
+            src={TRANSPARENT_PNG_DATA_URL}
+            alt=""
+            aria-hidden="true"
+            draggable
+            onDragStart={handleGlassPaneDragStart}
+            onDragEnd={handleGlassPaneDragEnd}
+            onContextMenu={(event) => event.preventDefault()}
+            className="absolute inset-0 h-full w-full object-cover opacity-0 [-webkit-touch-callout:none] [-webkit-user-drag:element]"
+          />
+        </div>
       </div>
 
       <div className="flex items-center justify-between px-3 py-2">
