@@ -6,8 +6,9 @@ import os
 import re
 import uuid
 from pathlib import Path
+from time import perf_counter
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Query, Request, Response, UploadFile
 
 from yoink.api.auth import get_optional_user
 from yoink.api.models import (
@@ -24,6 +25,12 @@ from yoink.api.models import (
     RenameJobRequest,
     RenameJobResponse,
     ResultMetadataResponse,
+)
+from yoink.api.transparent_render import (
+    MAX_SOURCE_IMAGE_BYTES,
+    load_source_bytes,
+    make_background_transparent,
+    parse_and_validate_source_url,
 )
 from yoink.api.user_jobs import (
     count_user_jobs,
@@ -281,6 +288,118 @@ async def get_result_components(
         total=total,
         has_more=has_more,
         components=batch,
+    )
+
+
+@router.get(
+    "/render/transparent.png",
+    responses={
+        404: {"model": ErrorResponse},
+        413: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+    },
+)
+async def render_transparent_png(request: Request, src: str = Query(..., min_length=1)):
+    """Render a transparent-background PNG from a supported source image URL."""
+    started = perf_counter()
+    source_kind = "unknown"
+
+    try:
+        source = parse_and_validate_source_url(
+            src=src,
+            supabase_url=request.app.state.supabase_url or "",
+            api_url=API_URL,
+        )
+        source_kind = source.kind
+    except ValueError as exc:
+        elapsed_ms = int((perf_counter() - started) * 1000)
+        logger.info(
+            "transparent_render source_kind=%s status=invalid elapsed_ms=%d detail=%s",
+            source_kind,
+            elapsed_ms,
+            str(exc),
+        )
+        raise HTTPException(status_code=422, detail="Invalid or unsupported source URL") from exc
+
+    try:
+        image_bytes = await load_source_bytes(
+            source=source,
+            supabase=request.app.state.supabase,
+            static_dir=Path(os.environ.get("YOINK_STATIC_DIR", "./static")),
+        )
+    except FileNotFoundError as exc:
+        elapsed_ms = int((perf_counter() - started) * 1000)
+        logger.info(
+            "transparent_render source_kind=%s status=missing elapsed_ms=%d",
+            source_kind,
+            elapsed_ms,
+        )
+        raise HTTPException(status_code=404, detail="Source image not found") from exc
+    except ValueError as exc:
+        elapsed_ms = int((perf_counter() - started) * 1000)
+        logger.info(
+            "transparent_render source_kind=%s status=invalid elapsed_ms=%d detail=%s",
+            source_kind,
+            elapsed_ms,
+            str(exc),
+        )
+        raise HTTPException(status_code=422, detail="Invalid source path") from exc
+    except Exception as exc:
+        elapsed_ms = int((perf_counter() - started) * 1000)
+        logger.exception(
+            "transparent_render source_kind=%s status=error stage=load elapsed_ms=%d",
+            source_kind,
+            elapsed_ms,
+        )
+        raise HTTPException(status_code=502, detail="Failed to load source image") from exc
+
+    if len(image_bytes) > MAX_SOURCE_IMAGE_BYTES:
+        elapsed_ms = int((perf_counter() - started) * 1000)
+        logger.info(
+            "transparent_render source_kind=%s status=too_large elapsed_ms=%d bytes=%d",
+            source_kind,
+            elapsed_ms,
+            len(image_bytes),
+        )
+        raise HTTPException(
+            status_code=413,
+            detail=f"Source image is too large (max {MAX_SOURCE_IMAGE_BYTES} bytes)",
+        )
+
+    try:
+        output_bytes = make_background_transparent(image_bytes)
+    except ValueError as exc:
+        elapsed_ms = int((perf_counter() - started) * 1000)
+        logger.info(
+            "transparent_render source_kind=%s status=invalid elapsed_ms=%d detail=%s",
+            source_kind,
+            elapsed_ms,
+            str(exc),
+        )
+        raise HTTPException(status_code=422, detail="Unsupported image data") from exc
+    except Exception as exc:
+        elapsed_ms = int((perf_counter() - started) * 1000)
+        logger.exception(
+            "transparent_render source_kind=%s status=error stage=transform elapsed_ms=%d",
+            source_kind,
+            elapsed_ms,
+        )
+        raise HTTPException(status_code=502, detail="Failed to render transparent image") from exc
+
+    elapsed_ms = int((perf_counter() - started) * 1000)
+    logger.info(
+        "transparent_render source_kind=%s status=ok elapsed_ms=%d",
+        source_kind,
+        elapsed_ms,
+    )
+    return Response(
+        content=output_bytes,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

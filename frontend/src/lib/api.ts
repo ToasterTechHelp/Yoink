@@ -1,5 +1,10 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
+export function buildTransparentRenderUrl(src: string): string {
+  const encodedSrc = encodeURIComponent(src);
+  return `${API_URL}/api/v1/render/transparent.png?src=${encodedSrc}`;
+}
+
 export interface JobStatus {
   job_id: string;
   status: "queued" | "processing" | "completed" | "failed";

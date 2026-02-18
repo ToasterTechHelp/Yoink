@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { ArrowLeft, Flag } from "lucide-react";
 import { toast } from "sonner";
@@ -10,9 +10,13 @@ import { CategoryFilter } from "@/components/category-filter";
 import { PageJump } from "@/components/page-jump";
 import { createClient } from "@/lib/supabase/client";
 import { useYoinkStore } from "@/store/useYoinkStore";
-import { submitFeedback, getJobResult } from "@/lib/api";
+import { submitFeedback, getJobResult, buildTransparentRenderUrl } from "@/lib/api";
 import type { ComponentData } from "@/lib/api";
 import type { SupabaseJob } from "@/store/useYoinkStore";
+
+function componentKey(component: ComponentData): string {
+  return `${component.page_number}:${component.id}`;
+}
 
 export default function ResultsPage() {
   const params = useParams();
@@ -33,8 +37,15 @@ export default function ResultsPage() {
   const [activeCategories, setActiveCategories] = useState<Set<string>>(
     new Set()
   );
+  const [transparentModeByKey, setTransparentModeByKey] = useState<
+    Record<string, boolean>
+  >({});
 
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  useEffect(() => {
+    setTransparentModeByKey({});
+  }, [jobId]);
 
   // Load data
   useEffect(() => {
@@ -232,9 +243,28 @@ export default function ResultsPage() {
 
             {/* Flex-wrap: cards size to their content */}
             <div className="flex flex-wrap items-start gap-4">
-              {comps.map((comp) => (
-                <ComponentCard key={comp.id} component={comp} />
-              ))}
+              {comps.map((comp) => {
+                const key = componentKey(comp);
+                const isTransparent = Boolean(transparentModeByKey[key]);
+                const imageUrl = isTransparent
+                  ? buildTransparentRenderUrl(comp.url)
+                  : comp.url;
+
+                return (
+                  <ComponentCard
+                    key={key}
+                    component={comp}
+                    imageUrl={imageUrl}
+                    isTransparent={isTransparent}
+                    onToggleTransparent={() =>
+                      setTransparentModeByKey((prev) => ({
+                        ...prev,
+                        [key]: !prev[key],
+                      }))
+                    }
+                  />
+                );
+              })}
             </div>
           </div>
         ))}
