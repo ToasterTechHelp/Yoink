@@ -4,25 +4,48 @@ on:
   push:
     branches:
       - main
+      - staging
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  deploy-production:
+    if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@master
+      - name: Deploy production backend via SSH
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /root/yoink
-            
-            git pull origin main
-            
+            cd ${{ secrets.DEPLOY_PATH_PROD }}
+            git fetch origin
+            git checkout main
+            git pull --ff-only origin main
             docker compose up -d --build --no-deps backend
-            
+            docker image prune -f
+
+  deploy-staging:
+    if: github.ref_name == 'staging'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy staging backend via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH_STAGING }}
+            git fetch origin
+            git checkout staging
+            git pull --ff-only origin staging
+            docker compose up -d --build --no-deps backend
             docker image prune -f
