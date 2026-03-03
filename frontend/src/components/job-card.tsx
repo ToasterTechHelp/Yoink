@@ -1,7 +1,15 @@
 "use client";
 
 import { formatDistanceToNow } from "date-fns";
-import { ExternalLink, MoreVertical, Trash2, FileText, Pencil } from "lucide-react";
+import {
+  ExternalLink,
+  MoreVertical,
+  Trash2,
+  FileText,
+  Pencil,
+  Loader2,
+  AlertCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -23,18 +31,34 @@ export function JobCard({ job, onOpen, onRename, onDelete }: JobCardProps) {
     addSuffix: true,
   });
 
+  const isCompleted = job.status === "completed";
+  const isFailed = job.status === "failed";
+
   return (
     <div className="flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/50">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-        <FileText className="h-5 w-5 text-muted-foreground" />
+        {isFailed ? (
+          <AlertCircle className="h-5 w-5 text-destructive" />
+        ) : (
+          <FileText className="h-5 w-5 text-muted-foreground" />
+        )}
       </div>
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{job.title}</p>
         <p className="text-xs text-muted-foreground">{timeAgo}</p>
-        <p className="text-xs text-orange-500">
-          {job.total_pages} pages | {job.total_components} components
-        </p>
+        {isCompleted ? (
+          <p className="text-xs text-orange-500">
+            {job.total_pages} pages | {job.total_components} components
+          </p>
+        ) : isFailed ? (
+          <p className="text-xs text-destructive">Failed</p>
+        ) : (
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Processing...
+          </p>
+        )}
       </div>
 
       <Button
@@ -53,10 +77,12 @@ export function JobCard({ job, onOpen, onRename, onDelete }: JobCardProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => onRename(job)}>
-            <Pencil className="mr-2 h-4 w-4" />
-            Rename
-          </DropdownMenuItem>
+          {isCompleted && (
+            <DropdownMenuItem onClick={() => onRename(job)}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Rename
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             className="text-destructive"
             onClick={() => onDelete(job.id)}

@@ -145,8 +145,42 @@ export default function Home() {
     [user, getAccessToken, setActiveJob, updateJobStatus, resetActiveJob, startPolling]
   );
 
+  const handleDismissProcessing = useCallback(async () => {
+    // Stop polling
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    // Reset overlay state
+    resetActiveJob();
+    // Refresh job list so the "processing" row appears in Recent Uploads
+    if (supabase) {
+      const { data } = await supabase
+        .from("jobs")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (data) setUserJobs(data as SupabaseJob[]);
+    }
+  }, [resetActiveJob, supabase, setUserJobs]);
+
   const handleOpenJob = (jobId: string) => {
-    router.push(`/jobs/${jobId}`);
+    const job = userJobs.find((j) => j.id === jobId);
+    if (!job) {
+      router.push(`/jobs/${jobId}`);
+      return;
+    }
+
+    if (job.status === "completed") {
+      router.push(`/jobs/${jobId}`);
+    } else if (job.status === "processing") {
+      // Resume watching the in-flight job — strip UUID hyphens for API compat
+      const hexId = jobId.replace(/-/g, "");
+      setActiveJob(hexId);
+      updateJobStatus("processing");
+      startPolling(hexId);
+    } else if (job.status === "failed") {
+      toast.error("This extraction failed. You can delete it and try again.");
+    }
   };
 
   const handleDeleteJob = async (jobId: string) => {
@@ -191,7 +225,10 @@ export default function Home() {
 
   return (
     <>
-      <ProcessingOverlay />
+      <ProcessingOverlay
+        canDismiss={!!user}
+        onDismiss={handleDismissProcessing}
+      />
 
       <div className="container mx-auto max-w-lg px-4 py-8">
         {/* Hero */}

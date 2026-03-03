@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import uuid
 from pathlib import Path
 from time import perf_counter
@@ -38,6 +39,7 @@ from yoink.api.user_jobs import (
     get_user_job,
     rename_user_job,
 )
+from yoink.api.storage import create_job_in_supabase
 from yoink.api.worker import ExtractionWorker
 
 logger = logging.getLogger(__name__)
@@ -133,6 +135,19 @@ async def extract(request: Request, file: UploadFile):
         upload_path=str(upload_path),
         user_id=user_id,
     )
+
+    # For authenticated users, create a Supabase row immediately so the
+    # job is visible in "Recent Uploads" even if the user refreshes.
+    if user_id and supabase:
+        try:
+            await create_job_in_supabase(user_id, job_id, file.filename, supabase)
+        except Exception:
+            # Supabase INSERT failed — clean up SQLite job + uploaded file
+            logger.exception("Failed to create Supabase job row for %s", job_id)
+            await job_store.delete_job(job_id)
+            shutil.rmtree(upload_dir, ignore_errors=True)
+            raise HTTPException(status_code=502, detail="Failed to create job record")
+
     await worker.enqueue(job_id)
 
     return JobResponse(job_id=job_id, status="queued")

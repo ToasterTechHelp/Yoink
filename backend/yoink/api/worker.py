@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 
 from yoink.api.jobs import JobStore
-from yoink.api.storage import save_job_to_supabase, upload_components_to_supabase
+from yoink.api.storage import complete_job_in_supabase, fail_job_in_supabase, upload_components_to_supabase
 from yoink.extractor import LayoutExtractor
 from yoink.pipeline import run_pipeline
 
@@ -194,6 +194,13 @@ class ExtractionWorker:
                 "failed",
                 error=str(e),
             )
+            # Transition Supabase row from 'processing' to 'failed'
+            user_id = job.get("user_id")
+            if user_id and self._supabase:
+                try:
+                    await fail_job_in_supabase(job_id, self._supabase)
+                except Exception:
+                    logger.exception("Failed to mark Supabase job %s as failed", job_id)
 
     async def _handle_guest_result(
         self, job_id: str, result: dict, result_path: Path,
@@ -237,8 +244,8 @@ class ExtractionWorker:
             supabase_url=self._supabase_url,
         )
 
-        # Insert row into Supabase jobs table
-        await save_job_to_supabase(
+        # Update existing Supabase row from 'processing' to 'completed'
+        await complete_job_in_supabase(
             user_id=user_id,
             job_id=job_id,
             title=filename,

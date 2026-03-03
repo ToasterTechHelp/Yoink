@@ -109,6 +109,18 @@ export default function ResultsPage() {
         }
 
         const job = data as SupabaseJob;
+
+        // Guard: redirect non-completed jobs back to home
+        if (job.status !== "completed") {
+          toast.error(
+            job.status === "failed"
+              ? "This extraction failed. You can delete it and try again."
+              : "This job is still processing. Please wait for it to finish."
+          );
+          router.push("/");
+          return;
+        }
+
         const comps = job.results?.components ?? [];
         setComponents(comps);
         setSourceFile(job.title);
