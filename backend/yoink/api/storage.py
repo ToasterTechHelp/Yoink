@@ -114,7 +114,43 @@ async def upload_components_to_supabase(
     return meta
 
 
-async def save_job_to_supabase(
+async def create_job_in_supabase(
+    user_id: str,
+    job_id: str,
+    title: str,
+    supabase: SupabaseClient,
+) -> None:
+    """Insert a skeleton job row with status='processing' into Supabase Postgres.
+
+    Called at upload time so the row exists before the worker starts,
+    allowing the frontend to discover in-flight jobs after a refresh.
+
+    Args:
+        user_id: Authenticated user's UUID.
+        job_id: The job identifier (32-char hex).
+        title: Original filename.
+        supabase: Supabase client instance (service_role).
+    """
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(
+        None,
+        lambda: supabase.table("jobs").insert(
+            {
+                "id": job_id,
+                "user_id": user_id,
+                "status": "processing",
+                "title": title,
+                "total_pages": 0,
+                "total_components": 0,
+                "results": None,
+                "storage_path": None,
+            }
+        ).execute(),
+    )
+    logger.info("Created processing job %s in Supabase for user %s", job_id, user_id)
+
+
+async def complete_job_in_supabase(
     user_id: str,
     job_id: str,
     title: str,
@@ -123,7 +159,7 @@ async def save_job_to_supabase(
     components: list[dict[str, Any]],
     supabase: SupabaseClient,
 ) -> None:
-    """Insert a completed job row into Supabase Postgres.
+    """Update an existing job row to status='completed' with results.
 
     Args:
         user_id: Authenticated user's UUID.
@@ -139,10 +175,8 @@ async def save_job_to_supabase(
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(
         None,
-        lambda: supabase.table("jobs").insert(
+        lambda: supabase.table("jobs").update(
             {
-                "id": job_id,
-                "user_id": user_id,
                 "status": "completed",
                 "title": title,
                 "total_pages": total_pages,
@@ -150,6 +184,26 @@ async def save_job_to_supabase(
                 "results": {"components": components},
                 "storage_path": storage_path,
             }
-        ).execute(),
+        ).eq("id", job_id).execute(),
     )
-    logger.info("Saved job %s to Supabase for user %s", job_id, user_id)
+    logger.info("Completed job %s in Supabase for user %s", job_id, user_id)
+
+
+async def fail_job_in_supabase(
+    job_id: str,
+    supabase: SupabaseClient,
+) -> None:
+    """Update an existing job row to status='failed'.
+
+    Args:
+        job_id: The job identifier.
+        supabase: Supabase client instance (service_role).
+    """
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(
+        None,
+        lambda: supabase.table("jobs").update(
+            {"status": "failed"}
+        ).eq("id", job_id).execute(),
+    )
+    logger.info("Marked job %s as failed in Supabase", job_id)

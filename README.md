@@ -141,11 +141,4 @@ uv run pytest tests/ -v
 
 ## Roadmap
 
-Future features:
-- Add support for PowerPoint and Word (IP)
-- Add ability to upload multiple images (IP)
-- Run uploading process in background (IP)
-
-Known issues:
-- Allows too many file types to be uploaded
-- Report button doesn't work
+See the [project board](https://github.com/users/ToasterTechHelp/projects/1) for planned features and known issues.
