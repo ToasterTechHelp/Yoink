@@ -59,12 +59,13 @@ class LayoutExtractor:
         self._model = YOLOv10(model_path)
         logger.info("Model loaded: %s", model_path)
 
-    def extract(self, image_path: str | Path) -> ExtractionResult:
+    def extract(self, image_path: str | Path, conf: float | None = None) -> ExtractionResult:
         """
         Run layout detection on a single image.
 
         Args:
             image_path: Path to the PNG image.
+            conf: Per-call confidence override. Uses instance default if None.
 
         Returns:
             ExtractionResult with all detections.
@@ -72,7 +73,7 @@ class LayoutExtractor:
         image_path = str(image_path)
         predict_kwargs = {
             "imgsz": self.imgsz,
-            "conf": self.conf,
+            "conf": conf if conf is not None else self.conf,
         }
         if self.device is not None:
             predict_kwargs["device"] = self.device

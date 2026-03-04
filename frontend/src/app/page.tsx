@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Dropzone } from "@/components/dropzone";
 import { FeatureCards } from "@/components/feature-cards";
+import { SensitivitySlider, PRESET_KEYS } from "@/components/sensitivity-slider";
 import { ProcessingOverlay } from "@/components/processing-overlay";
 import { JobCard } from "@/components/job-card";
 import { RenameUploadDialog } from "@/components/rename-upload-dialog";
@@ -28,6 +29,7 @@ export default function Home() {
   const setGuestResult = useYoinkStore((s) => s.setGuestResult);
   const activeJobStatus = useYoinkStore((s) => s.activeJobStatus);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [sensitivityStep, setSensitivityStep] = useState(2);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<SupabaseJob | null>(null);
 
@@ -133,7 +135,8 @@ export default function Home() {
           token = await getAccessToken();
         }
 
-        const { job_id } = await uploadFile(file, token);
+        const { job_id } = await uploadFile(file, token, PRESET_KEYS[sensitivityStep]);
+        setSensitivityStep(2);
         setActiveJob(job_id);
         updateJobStatus("queued");
         startPolling(job_id);
@@ -142,7 +145,7 @@ export default function Home() {
         resetActiveJob();
       }
     },
-    [user, getAccessToken, setActiveJob, updateJobStatus, resetActiveJob, startPolling]
+    [user, getAccessToken, setActiveJob, updateJobStatus, resetActiveJob, startPolling, sensitivityStep]
   );
 
   const handleDismissProcessing = useCallback(async () => {
@@ -241,10 +244,19 @@ export default function Home() {
         </div>
 
         {/* Dropzone */}
-        <div className="mb-8">
+        <div className="mb-4">
           <Dropzone
             onFileSelected={handleFileSelected}
             disabled={isProcessing || (!!user && slotsUsed >= 5)}
+          />
+        </div>
+
+        {/* Sensitivity Slider */}
+        <div className="mb-8">
+          <SensitivitySlider
+            value={sensitivityStep}
+            onChange={setSensitivityStep}
+            disabled={isProcessing}
           />
         </div>
 

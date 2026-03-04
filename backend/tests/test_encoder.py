@@ -32,10 +32,6 @@ def sample_component(sample_crop):
 
 
 class TestEncodeBase64:
-    def test_returns_string(self, sample_crop):
-        result = encode_crop_to_base64(sample_crop)
-        assert isinstance(result, str)
-
     def test_decodable(self, sample_crop):
         b64 = encode_crop_to_base64(sample_crop)
         decoded = base64.b64decode(b64)

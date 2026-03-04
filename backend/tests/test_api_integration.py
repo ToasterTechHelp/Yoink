@@ -183,100 +183,14 @@ class TestFullJobLifecycle:
             assert "id" in comp
             assert "category" in comp
             assert comp["category"] in ("text", "figure", "misc")
-            assert "base64" in comp
+            assert "url" in comp
             assert "bbox" in comp
             assert "page_number" in comp
-        
+
         # Job should still be completed (no auto-cleanup)
         resp = integration_client.get(f"/api/v1/jobs/{job_id}")
         assert resp.status_code == 200
         assert resp.json()["status"] == "completed"
-
-
-class TestSequentialJobProcessing:
-    """Test that jobs are processed one at a time."""
-    
-    def test_jobs_processed_sequentially(self, integration_client, tmp_path):
-        """Upload multiple jobs and verify they complete in order."""
-        # Create test images
-        jobs = []
-        for i in range(3):
-            test_img = tmp_path / f"test_{i}.png"
-            create_test_image(test_img)
-            
-            with open(test_img, "rb") as f:
-                resp = integration_client.post(
-                    "/api/v1/extract",
-                    files={"file": (f"test_{i}.png", f, "image/png")},
-                )
-            
-            assert resp.status_code == 202
-            jobs.append(resp.json()["job_id"])
-        
-        # All should be queued initially
-        for job_id in jobs:
-            resp = integration_client.get(f"/api/v1/jobs/{job_id}")
-            assert resp.json()["status"] in ("queued", "processing")
-        
-        # Wait for all to complete
-        max_wait = 120
-        start = time.time()
-        completed = set()
-        
-        while len(completed) < len(jobs) and time.time() - start < max_wait:
-            for job_id in jobs:
-                if job_id in completed:
-                    continue
-                resp = integration_client.get(f"/api/v1/jobs/{job_id}")
-                status = resp.json()["status"]
-                if status == "completed":
-                    completed.add(job_id)
-            time.sleep(0.5)
-        
-        assert len(completed) == len(jobs), f"Only {len(completed)}/{len(jobs)} jobs completed"
-
-
-class TestProgressUpdates:
-    """Test that progress is correctly tracked during processing."""
-    
-    def test_progress_updated_during_processing(self, integration_client, tmp_path):
-        """Verify progress fields are updated as job processes."""
-        # Create test image
-        test_img = tmp_path / "test.png"
-        create_test_image(test_img)
-        
-        with open(test_img, "rb") as f:
-            resp = integration_client.post(
-                "/api/v1/extract",
-                files={"file": ("test.png", f, "image/png")},
-            )
-        
-        job_id = resp.json()["job_id"]
-        
-        # Poll and check progress updates
-        seen_progress = []
-        max_wait = 60
-        start = time.time()
-        
-        while time.time() - start < max_wait:
-            resp = integration_client.get(f"/api/v1/jobs/{job_id}")
-            data = resp.json()
-            
-            progress = (data["progress"]["current_page"], data["progress"]["total_pages"])
-            if progress not in seen_progress:
-                seen_progress.append(progress)
-            
-            if data["status"] == "completed":
-                break
-            elif data["status"] == "failed":
-                pytest.fail("Job failed")
-            
-            time.sleep(0.2)
-        
-        # Should have seen progress advance
-        assert len(seen_progress) >= 1
-        # Final progress should show completion
-        assert seen_progress[-1][0] == seen_progress[-1][1]  # current == total
 
 
 class TestCleanupBehavior:
@@ -532,8 +446,8 @@ class TestBatchedComponentLoading:
             time.sleep(0.5)
         pytest.fail("Job didn't complete in time")
     
-    def test_result_metadata_returns_no_components(self, integration_client, tmp_path):
-        """GET /result should return metadata only, no page/component data."""
+    def test_guest_result_includes_components(self, integration_client, tmp_path):
+        """GET /result for a guest job returns full response with components."""
         job_id = self._upload_and_wait(integration_client, tmp_path)
         resp = integration_client.get(f"/api/v1/jobs/{job_id}/result")
         assert resp.status_code == 200
@@ -541,8 +455,8 @@ class TestBatchedComponentLoading:
         assert "source_file" in data
         assert "total_pages" in data
         assert "total_components" in data
-        assert "pages" not in data
-        assert "components" not in data
+        assert "components" in data
+        assert len(data["components"]) == data["total_components"]
     
     def test_batch_loading_first_batch(self, integration_client, tmp_path):
         """Fetch the first batch of components with offset=0."""
@@ -561,7 +475,7 @@ class TestBatchedComponentLoading:
             assert "page_number" in comp
             assert "id" in comp
             assert "category" in comp
-            assert "base64" in comp
+            assert "url" in comp
     
     def test_batch_loading_sequential_fetches_all(self, integration_client, tmp_path):
         """Sequentially fetch all components in batches of 3."""

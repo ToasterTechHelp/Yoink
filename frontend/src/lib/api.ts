@@ -40,10 +40,14 @@ export interface UserResultMeta {
 
 export async function uploadFile(
   file: File,
-  token?: string
+  token?: string,
+  sensitivity?: string
 ): Promise<{ job_id: string; status: string }> {
   const formData = new FormData();
   formData.append("file", file);
+  if (sensitivity) {
+    formData.append("sensitivity", sensitivity);
+  }
 
   const headers: Record<string, string> = {};
   if (token) {

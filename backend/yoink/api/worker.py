@@ -154,6 +154,7 @@ class ExtractionWorker:
                 input_file=job["upload_path"],
                 output_dir=str(output_dir),
                 extractor=self._extractor,
+                conf=job.get("conf", 0.2),
                 progress_callback=progress_callback,
             )
 

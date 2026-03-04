@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from time import perf_counter
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile
 
 from yoink.api.auth import get_optional_user
 from yoink.api.models import (
@@ -53,6 +53,14 @@ API_URL = os.environ.get("YOINK_API_URL", "http://127.0.0.1:8000")
 MAX_BASE_NAME_LENGTH = 120
 INVALID_BASE_NAME_PATTERN = re.compile(r"[\\/]|[\x00-\x1f\x7f]")
 
+SENSITIVITY_PRESETS = {
+    "fastest": 0.5,
+    "fast": 0.35,
+    "balanced": 0.2,
+    "thorough": 0.1,
+    "most_thorough": 0.05,
+}
+
 
 def _normalize_job_id(job_id: str) -> str:
     """Normalize supported job ID formats to lowercase 32-char hex."""
@@ -90,7 +98,9 @@ def _validate_base_name(base_name: str) -> str:
         422: {"model": ErrorResponse},
     },
 )
-async def extract(request: Request, file: UploadFile):
+async def extract(
+    request: Request, file: UploadFile, sensitivity: str = Form("balanced"),
+):
     """Upload a file and start an extraction job.
 
     - Guest (no token): 1 file, results saved to /static/guest/{job_id}/
@@ -100,6 +110,7 @@ async def extract(request: Request, file: UploadFile):
     job_store = request.app.state.job_store
     worker: ExtractionWorker = request.app.state.worker
     supabase = request.app.state.supabase
+    conf = SENSITIVITY_PRESETS.get(sensitivity, 0.2)
 
     # Authenticate (optional)
     user_id = await get_optional_user(request)
@@ -134,6 +145,7 @@ async def extract(request: Request, file: UploadFile):
         filename=file.filename,
         upload_path=str(upload_path),
         user_id=user_id,
+        conf=conf,
     )
 
     # For authenticated users, create a Supabase row immediately so the

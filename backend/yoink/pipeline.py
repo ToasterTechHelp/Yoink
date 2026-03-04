@@ -72,7 +72,7 @@ def run_pipeline(
             logger.info("Processing page %d/%d...", page_number, len(pages))
 
             # Extract layout
-            result = extractor.extract(page_path)
+            result = extractor.extract(page_path, conf=conf)
 
             # Map to categories and crop
             components = map_and_crop(
