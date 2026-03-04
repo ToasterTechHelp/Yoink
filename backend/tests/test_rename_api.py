@@ -18,12 +18,23 @@ class InMemoryJobStore:
     def __init__(self, jobs: dict[str, dict] | None = None):
         self.jobs = jobs or {}
         self.feedback: list[dict] = []
+        self.created_jobs: list[dict] = []
 
     async def get_job(self, job_id: str):
         job = self.jobs.get(job_id)
         if job is None:
             return None
         return dict(job)
+
+    async def create_job(
+        self, filename: str, upload_path: str, user_id: str | None = None,
+        conf: float = 0.2,
+    ) -> str:
+        job_id = "a" * 32
+        self.created_jobs.append(
+            {"filename": filename, "upload_path": upload_path, "user_id": user_id, "conf": conf}
+        )
+        return job_id
 
     async def delete_job(self, job_id: str) -> bool:
         return self.jobs.pop(job_id, None) is not None
@@ -40,6 +51,16 @@ class InMemoryJobStore:
             {"job_id": job_id, "type": feedback_type, "message": message}
         )
         return "f" * 32
+
+
+class DummyWorker:
+    """Minimal worker stub that records enqueued job IDs."""
+
+    def __init__(self):
+        self.enqueued: list[str] = []
+
+    async def enqueue(self, job_id: str) -> None:
+        self.enqueued.append(job_id)
 
 
 def _sample_local_job(user_id: str | None = OWNER_ID) -> dict:
@@ -324,3 +345,88 @@ def test_get_job_status_accepts_dashed_and_undashed_ids():
 
     assert dashed.status_code == 200
     assert undashed.status_code == 200
+
+
+# ---- Extract endpoint: sensitivity parameter ----
+
+def _extract_client(store: InMemoryJobStore, worker: DummyWorker, tmp_path) -> TestClient:
+    """Build a TestClient wired for the extract route."""
+    from pathlib import Path
+
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api/v1")
+    app.state.job_store = store
+    app.state.worker = worker
+    app.state.supabase = None
+    app.state.supabase_url = None
+    app.state.extractor = None
+
+    # Point UPLOAD_DIR at a temp directory so file writes succeed
+    routes.UPLOAD_DIR = Path(tmp_path) / "uploads"
+    routes.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    return TestClient(app)
+
+
+def test_extract_accepts_sensitivity(monkeypatch, tmp_path):
+    """POST /extract with sensitivity=thorough should store conf=0.1."""
+    store = InMemoryJobStore()
+    worker = DummyWorker()
+
+    async def fake_get_optional_user(_request):
+        return None
+
+    monkeypatch.setattr(routes, "get_optional_user", fake_get_optional_user)
+
+    with _extract_client(store, worker, tmp_path) as client:
+        resp = client.post(
+            "/api/v1/extract",
+            files={"file": ("test.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 100, "image/png")},
+            data={"sensitivity": "thorough"},
+        )
+
+    assert resp.status_code == 202
+    assert len(store.created_jobs) == 1
+    assert store.created_jobs[0]["conf"] == 0.1
+    assert len(worker.enqueued) == 1
+
+
+def test_extract_unknown_sensitivity_defaults_to_balanced(monkeypatch, tmp_path):
+    """POST /extract with an unrecognised sensitivity value should fall back to 0.2."""
+    store = InMemoryJobStore()
+    worker = DummyWorker()
+
+    async def fake_get_optional_user(_request):
+        return None
+
+    monkeypatch.setattr(routes, "get_optional_user", fake_get_optional_user)
+
+    with _extract_client(store, worker, tmp_path) as client:
+        resp = client.post(
+            "/api/v1/extract",
+            files={"file": ("test.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 100, "image/png")},
+            data={"sensitivity": "nonsense"},
+        )
+
+    assert resp.status_code == 202
+    assert store.created_jobs[0]["conf"] == 0.2
+
+
+def test_extract_omitted_sensitivity_defaults_to_balanced(monkeypatch, tmp_path):
+    """POST /extract without a sensitivity field should default to balanced (0.2)."""
+    store = InMemoryJobStore()
+    worker = DummyWorker()
+
+    async def fake_get_optional_user(_request):
+        return None
+
+    monkeypatch.setattr(routes, "get_optional_user", fake_get_optional_user)
+
+    with _extract_client(store, worker, tmp_path) as client:
+        resp = client.post(
+            "/api/v1/extract",
+            files={"file": ("test.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 100, "image/png")},
+        )
+
+    assert resp.status_code == 202
+    assert store.created_jobs[0]["conf"] == 0.2

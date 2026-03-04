@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     current_page     INTEGER DEFAULT 0,
     total_pages      INTEGER DEFAULT 0,
     total_components INTEGER DEFAULT 0,
+    conf         REAL DEFAULT 0.2,
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL
 );
@@ -87,6 +88,11 @@ class JobStore:
                 "ALTER TABLE jobs ADD COLUMN user_id TEXT"
             )
             logger.info("Migration: added user_id column to jobs table")
+        if "conf" not in columns:
+            await self._db.execute(
+                "ALTER TABLE jobs ADD COLUMN conf REAL DEFAULT 0.2"
+            )
+            logger.info("Migration: added conf column to jobs table")
 
     async def close(self) -> None:
         """Close the database connection gracefully."""
@@ -96,24 +102,26 @@ class JobStore:
 
     async def create_job(
         self, filename: str, upload_path: str, user_id: str | None = None,
+        conf: float = 0.2,
     ) -> str:
         """
         Create a new extraction job in 'queued' status.
-        
+
         Args:
             filename: Original name of the uploaded file
             upload_path: Path where the uploaded file is stored
             user_id: Supabase user UUID (None for guests)
-            
+            conf: YOLO confidence threshold for this job
+
         Returns:
             The generated job ID (hex UUID)
         """
         job_id = uuid.uuid4().hex
         now = datetime.now(timezone.utc).isoformat()
         await self._db.execute(
-            """INSERT INTO jobs (id, user_id, status, filename, upload_path, created_at, updated_at)
-               VALUES (?, ?, 'queued', ?, ?, ?, ?)""",
-            (job_id, user_id, filename, upload_path, now, now),
+            """INSERT INTO jobs (id, user_id, status, filename, upload_path, conf, created_at, updated_at)
+               VALUES (?, ?, 'queued', ?, ?, ?, ?, ?)""",
+            (job_id, user_id, filename, upload_path, conf, now, now),
         )
         await self._db.commit()
         logger.info("Created job %s for file '%s' (user=%s)", job_id, filename, user_id or "guest")

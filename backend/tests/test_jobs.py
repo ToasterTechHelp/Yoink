@@ -258,3 +258,100 @@ async def test_close_is_idempotent(tmp_path):
     await store.init()
     await store.close()
     await store.close()  # Should not raise
+
+
+@pytest.mark.asyncio
+async def test_create_job_stores_conf(job_store):
+    """Verify that a custom conf value is persisted and retrievable."""
+    job_id = await job_store.create_job("test.pdf", "/tmp/test.pdf", conf=0.1)
+    job = await job_store.get_job(job_id)
+    assert job["conf"] == 0.1
+
+
+@pytest.mark.asyncio
+async def test_create_job_default_conf(job_store):
+    """Verify that conf defaults to 0.2 when not specified."""
+    job_id = await job_store.create_job("test.pdf", "/tmp/test.pdf")
+    job = await job_store.get_job(job_id)
+    assert job["conf"] == 0.2
+
+
+@pytest.mark.asyncio
+async def test_migrate_adds_conf_to_old_db(db_path):
+    """Simulate a pre-existing DB without the conf column.
+
+    This mirrors test_migrate_adds_total_components_to_old_db for the
+    new conf column added by the sensitivity feature.
+    """
+    # Step 1: Create old-schema DB (no conf column)
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute("""
+            CREATE TABLE jobs (
+                id           TEXT PRIMARY KEY,
+                user_id      TEXT,
+                status       TEXT NOT NULL DEFAULT 'queued',
+                filename     TEXT NOT NULL,
+                upload_path  TEXT,
+                result_path  TEXT,
+                error        TEXT,
+                current_page     INTEGER DEFAULT 0,
+                total_pages      INTEGER DEFAULT 0,
+                total_components INTEGER DEFAULT 0,
+                created_at   TEXT NOT NULL,
+                updated_at   TEXT NOT NULL
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE feedback (
+                id         TEXT PRIMARY KEY,
+                job_id     TEXT NOT NULL,
+                type       TEXT NOT NULL CHECK(type IN ('bug', 'content_violation')),
+                message    TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        await db.commit()
+
+    # Step 2: Open with JobStore — migration should add the conf column
+    store = JobStore(db_path=db_path)
+    await store.init()
+
+    # Step 3: Verify we can create a job and read conf
+    job_id = await store.create_job("test.pdf", "/tmp/test.pdf", conf=0.05)
+    job = await store.get_job(job_id)
+    assert job["conf"] == 0.05
+
+    await store.close()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_preserves_user_jobs(tmp_path):
+    """Authenticated user jobs should never be cleaned up, even when old."""
+    db_path = str(tmp_path / "test.db")
+    store = JobStore(db_path=db_path)
+    await store.init()
+
+    # Create an authenticated user job
+    job_id = await store.create_job(
+        "user_file.pdf", "/tmp/user_file.pdf", user_id="user-123",
+    )
+
+    # Backdate it to be well past the cleanup threshold
+    old_time = "2024-01-01T00:00:00+00:00"
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "UPDATE jobs SET created_at = ? WHERE id = ?",
+            (old_time, job_id),
+        )
+        await db.commit()
+
+    # Cleanup should skip it (user_id IS NOT NULL)
+    count = await store.cleanup_old_jobs(max_age_hours=24)
+    assert count == 0
+
+    # Job should still exist
+    job = await store.get_job(job_id)
+    assert job is not None
+    assert job["user_id"] == "user-123"
+
+    await store.close()
