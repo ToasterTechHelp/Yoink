@@ -34,18 +34,25 @@ def detect_file_type(file_path: Path) -> str:
 
 def convert_image(file_path: Path, output_dir: Path) -> List[Tuple[int, Path]]:
     """Validate and convert a single image file to PNG. Returns [(1, png_path)]."""
-    try:
-        img = Image.open(file_path)
-        img.verify()
-        # Re-open after verify (verify closes the file)
-        img = Image.open(file_path)
-    except Exception as e:
-        raise ConversionError(f"Invalid image file '{file_path}': {e}") from e
+    return convert_images([file_path], output_dir)
 
-    png_path = output_dir / f"page_1.png"
-    img.convert("RGB").save(png_path, "PNG")
-    logger.info("Converted image to PNG: %s", png_path)
-    return [(1, png_path)]
+
+def convert_images(file_paths: List[Path], output_dir: Path) -> List[Tuple[int, Path]]:
+    """Validate and convert multiple image files to PNGs. Returns [(page_number, png_path), ...]."""
+    pages: List[Tuple[int, Path]] = []
+    for idx, file_path in enumerate(file_paths, start=1):
+        try:
+            img = Image.open(file_path)
+            img.verify()
+            img = Image.open(file_path)
+        except Exception as e:
+            raise ConversionError(f"Invalid image file '{file_path}': {e}") from e
+
+        png_path = output_dir / f"page_{idx}.png"
+        img.convert("RGB").save(png_path, "PNG")
+        pages.append((idx, png_path))
+        logger.info("Converted image %d/%d to PNG: %s", idx, len(file_paths), png_path)
+    return pages
 
 
 def convert_pdf(file_path: Path, output_dir: Path, dpi: int = 200) -> List[Tuple[int, Path]]:

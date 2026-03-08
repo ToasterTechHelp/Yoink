@@ -39,11 +39,13 @@ def build_page_entry(page_number: int, components: List[Component]) -> Dict[str,
 def assemble_output(
     source_file: str,
     pages: List[Dict[str, Any]],
+    source_type: str = "pdf",
 ) -> Dict[str, Any]:
     """Assemble the final JSON output structure."""
     total_components = sum(len(p["components"]) for p in pages)
     return {
         "source_file": source_file,
+        "source_type": source_type,
         "total_pages": len(pages),
         "total_components": total_components,
         "pages": pages,

@@ -93,6 +93,11 @@ class JobStore:
                 "ALTER TABLE jobs ADD COLUMN conf REAL DEFAULT 0.2"
             )
             logger.info("Migration: added conf column to jobs table")
+        if "extra_paths" not in columns:
+            await self._db.execute(
+                "ALTER TABLE jobs ADD COLUMN extra_paths TEXT"
+            )
+            logger.info("Migration: added extra_paths column to jobs table")
 
     async def close(self) -> None:
         """Close the database connection gracefully."""
@@ -102,7 +107,7 @@ class JobStore:
 
     async def create_job(
         self, filename: str, upload_path: str, user_id: str | None = None,
-        conf: float = 0.2,
+        conf: float = 0.2, extra_paths: str | None = None,
     ) -> str:
         """
         Create a new extraction job in 'queued' status.
@@ -112,6 +117,7 @@ class JobStore:
             upload_path: Path where the uploaded file is stored
             user_id: Supabase user UUID (None for guests)
             conf: YOLO confidence threshold for this job
+            extra_paths: JSON-encoded list of additional file paths (multi-image)
 
         Returns:
             The generated job ID (hex UUID)
@@ -119,9 +125,9 @@ class JobStore:
         job_id = uuid.uuid4().hex
         now = datetime.now(timezone.utc).isoformat()
         await self._db.execute(
-            """INSERT INTO jobs (id, user_id, status, filename, upload_path, conf, created_at, updated_at)
-               VALUES (?, ?, 'queued', ?, ?, ?, ?, ?)""",
-            (job_id, user_id, filename, upload_path, conf, now, now),
+            """INSERT INTO jobs (id, user_id, status, filename, upload_path, conf, extra_paths, created_at, updated_at)
+               VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?)""",
+            (job_id, user_id, filename, upload_path, conf, extra_paths, now, now),
         )
         await self._db.commit()
         logger.info("Created job %s for file '%s' (user=%s)", job_id, filename, user_id or "guest")

@@ -29,6 +29,7 @@ export interface GuestResult {
   total_pages: number;
   total_components: number;
   components: ComponentData[];
+  source_type?: "pdf" | "images";
 }
 
 export interface UserResultMeta {
@@ -36,15 +37,19 @@ export interface UserResultMeta {
   total_pages: number;
   total_components: number;
   is_guest: boolean;
+  source_type?: "pdf" | "images";
 }
 
 export async function uploadFile(
-  file: File,
+  files: File | File[],
   token?: string,
   sensitivity?: string
 ): Promise<{ job_id: string; status: string }> {
   const formData = new FormData();
-  formData.append("file", file);
+  const fileList = Array.isArray(files) ? files : [files];
+  for (const file of fileList) {
+    formData.append("files", file);
+  }
   if (sensitivity) {
     formData.append("sensitivity", sensitivity);
   }

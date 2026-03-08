@@ -30,6 +30,7 @@ export default function Home() {
   const activeJobStatus = useYoinkStore((s) => s.activeJobStatus);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [sensitivityStep, setSensitivityStep] = useState(2);
+  const [activeJobSourceType, setActiveJobSourceType] = useState<string>("pdf");
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<SupabaseJob | null>(null);
 
@@ -83,12 +84,14 @@ export default function Home() {
 
             if ("components" in result) {
               // Guest result — store in Zustand and navigate
+              const guestData = result as GuestResult;
               setGuestResult({
                 jobId,
-                sourceFile: result.source_file,
-                totalPages: result.total_pages,
-                totalComponents: result.total_components,
-                components: (result as GuestResult).components,
+                sourceFile: guestData.source_file,
+                totalPages: guestData.total_pages,
+                totalComponents: guestData.total_components,
+                components: guestData.components,
+                sourceType: guestData.source_type ?? "pdf",
               });
               router.push(`/jobs/${jobId}?guest=true`);
             } else {
@@ -123,9 +126,15 @@ export default function Home() {
     };
   }, []);
 
-  const handleFileSelected = useCallback(
-    async (file: File) => {
+  const handleFilesSelected = useCallback(
+    async (files: File[]) => {
       try {
+        // Determine source type: images if all files are images
+        const allImages = files.every((f) =>
+          f.type.startsWith("image/")
+        );
+        setActiveJobSourceType(allImages ? "images" : "pdf");
+
         setActiveJob("pending");
         updateJobStatus("uploading");
 
@@ -135,7 +144,7 @@ export default function Home() {
           token = await getAccessToken();
         }
 
-        const { job_id } = await uploadFile(file, token, PRESET_KEYS[sensitivityStep]);
+        const { job_id } = await uploadFile(files, token, PRESET_KEYS[sensitivityStep]);
         setSensitivityStep(2);
         setActiveJob(job_id);
         updateJobStatus("queued");
@@ -231,12 +240,13 @@ export default function Home() {
       <ProcessingOverlay
         canDismiss={!!user}
         onDismiss={handleDismissProcessing}
+        sourceType={activeJobSourceType}
       />
 
       <div className="container mx-auto max-w-lg px-4 py-8">
         {/* Hero */}
         <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold">Extract PDF Components</h1>
+          <h1 className="text-2xl font-bold">Extract Components</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Drag and drop your lecture notes here to automatically extract
             diagrams and text for your digital notebook.
@@ -246,7 +256,7 @@ export default function Home() {
         {/* Dropzone */}
         <div className="mb-4">
           <Dropzone
-            onFileSelected={handleFileSelected}
+            onFilesSelected={handleFilesSelected}
             disabled={isProcessing || (!!user && slotsUsed >= 5)}
           />
         </div>

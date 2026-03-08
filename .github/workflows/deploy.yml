@@ -21,11 +21,13 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
           script: |
+            set -euo pipefail
             cd ${{ secrets.DEPLOY_PATH_PROD }}
             git fetch origin
             git checkout main
-            git pull --ff-only origin main
+            git reset --hard origin/main
             docker compose up -d --build --no-deps backend
             docker image prune -f
 
@@ -42,10 +44,12 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
           script: |
+            set -euo pipefail
             cd ${{ secrets.DEPLOY_PATH_STAGING }}
             git fetch origin
             git checkout staging
-            git pull --ff-only origin staging
+            git reset --hard origin/staging
             docker compose up -d --build --no-deps backend
             docker image prune -f

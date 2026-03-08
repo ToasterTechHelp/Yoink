@@ -33,6 +33,7 @@ export default function ResultsPage() {
   const [sourceFile, setSourceFile] = useState("");
   const [totalComponents, setTotalComponents] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [sourceType, setSourceType] = useState<string>("pdf");
   const [loading, setLoading] = useState(true);
   const [activeCategories, setActiveCategories] = useState<Set<string>>(
     new Set()
@@ -60,6 +61,7 @@ export default function ResultsPage() {
         setSourceFile(guestResult.sourceFile);
         setTotalComponents(guestResult.totalComponents);
         setTotalPages(guestResult.totalPages);
+        setSourceType(guestResult.sourceType ?? "pdf");
 
         const cats = new Set(guestResult.components.map((c) => c.category));
         setActiveCategories(cats);
@@ -75,6 +77,7 @@ export default function ResultsPage() {
             setSourceFile(data.source_file);
             setTotalComponents(data.total_components);
             setTotalPages(data.total_pages);
+            setSourceType(data.source_type ?? "pdf");
 
             const cats = new Set(data.components.map((c) => c.category));
             setActiveCategories(cats);
@@ -126,6 +129,7 @@ export default function ResultsPage() {
         setSourceFile(job.title);
         setTotalComponents(job.total_components);
         setTotalPages(job.total_pages);
+        setSourceType(job.results?.source_type ?? "pdf");
 
         const cats = new Set(comps.map((c) => c.category));
         setActiveCategories(cats);
@@ -264,7 +268,7 @@ export default function ResultsPage() {
           >
             <div className="mb-3 flex items-center gap-2">
               <span className="rounded-md bg-muted px-2.5 py-1 text-xs font-semibold">
-                Page {pageNum}
+                {sourceType === "images" ? "Image" : "Page"} {pageNum}
               </span>
               <div className="h-px flex-1 bg-border" />
             </div>
@@ -302,7 +306,7 @@ export default function ResultsPage() {
       </div>
 
       {/* Page jump */}
-      <PageJump pages={visiblePages} onJump={handleJump} />
+      <PageJump pages={visiblePages} onJump={handleJump} label={sourceType === "images" ? "Image" : "Page"} />
     </div>
   );
 }

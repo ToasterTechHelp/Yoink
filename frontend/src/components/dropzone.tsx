@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useYoinkStore } from "@/store/useYoinkStore";
 
 interface DropzoneProps {
-  onFileSelected: (file: File) => void;
+  onFilesSelected: (files: File[]) => void;
   disabled?: boolean;
 }
 
@@ -18,7 +18,18 @@ const ACCEPTED_TYPES = [
   "image/jpeg",
 ];
 
-export function Dropzone({ onFileSelected, disabled }: DropzoneProps) {
+const IMAGE_TYPES = ["image/png", "image/jpeg"];
+
+function collectValidFiles(fileList: FileList): File[] {
+  const all = Array.from(fileList).filter((f) => ACCEPTED_TYPES.includes(f.type));
+  if (all.length === 0) return [];
+  // If any non-image file is present, only take the first file
+  const hasNonImage = all.some((f) => !IMAGE_TYPES.includes(f.type));
+  if (hasNonImage) return [all[0]];
+  return all;
+}
+
+export function Dropzone({ onFilesSelected, disabled }: DropzoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const activeJobStatus = useYoinkStore((s) => s.activeJobStatus);
   const isProcessing = activeJobStatus !== "idle" && activeJobStatus !== "failed";
@@ -29,23 +40,24 @@ export function Dropzone({ onFileSelected, disabled }: DropzoneProps) {
       setIsDragging(false);
       if (disabled || isProcessing) return;
 
-      const file = e.dataTransfer.files[0];
-      if (file && ACCEPTED_TYPES.includes(file.type)) {
-        onFileSelected(file);
+      const files = collectValidFiles(e.dataTransfer.files);
+      if (files.length > 0) {
+        onFilesSelected(files);
       }
     },
-    [onFileSelected, disabled, isProcessing]
+    [onFilesSelected, disabled, isProcessing]
   );
 
   const handleFileInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-        onFileSelected(file);
+      if (!e.target.files || e.target.files.length === 0) return;
+      const files = collectValidFiles(e.target.files);
+      if (files.length > 0) {
+        onFilesSelected(files);
       }
       e.target.value = "";
     },
-    [onFileSelected]
+    [onFilesSelected]
   );
 
   return (
@@ -75,6 +87,7 @@ export function Dropzone({ onFileSelected, disabled }: DropzoneProps) {
           type="file"
           className="hidden"
           accept=".pdf,.ppt,.pptx,.png,.jpg,.jpeg"
+          multiple
           onChange={handleFileInput}
           disabled={disabled || isProcessing}
         />
@@ -89,7 +102,7 @@ export function Dropzone({ onFileSelected, disabled }: DropzoneProps) {
       </label>
 
       <p className="text-sm text-muted-foreground">or drop files here</p>
-      <p className="text-xs text-muted-foreground/60">PDFs over 100 pages will be limited to the first 100.</p>
+      <p className="text-xs text-muted-foreground/60">Select multiple images at once, or a single PDF. PDFs over 100 pages will be limited to the first 100.</p>
     </div>
   );
 }

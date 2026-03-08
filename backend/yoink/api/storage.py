@@ -158,6 +158,7 @@ async def complete_job_in_supabase(
     total_components: int,
     components: list[dict[str, Any]],
     supabase: SupabaseClient,
+    source_type: str = "pdf",
 ) -> None:
     """Update an existing job row to status='completed' with results.
 
@@ -169,6 +170,7 @@ async def complete_job_in_supabase(
         total_components: Number of components extracted.
         components: List of component metadata dicts (with URLs).
         supabase: Supabase client instance (service_role).
+        source_type: "pdf" or "images" — persisted in results JSON.
     """
     storage_path = f"scans/{user_id}/{job_id}/"
 
@@ -181,7 +183,7 @@ async def complete_job_in_supabase(
                 "title": title,
                 "total_pages": total_pages,
                 "total_components": total_components,
-                "results": {"components": components},
+                "results": {"components": components, "source_type": source_type},
                 "storage_path": storage_path,
             }
         ).eq("id", job_id).execute(),

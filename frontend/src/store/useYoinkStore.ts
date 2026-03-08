@@ -10,7 +10,7 @@ export interface SupabaseJob {
   title: string;
   total_pages: number;
   total_components: number;
-  results: { components: ComponentData[] } | null;
+  results: { components: ComponentData[]; source_type?: string } | null;
   storage_path: string | null;
 }
 
@@ -39,6 +39,7 @@ interface YoinkState {
     totalPages: number;
     totalComponents: number;
     components: ComponentData[];
+    sourceType?: string;
   } | null;
   setGuestResult: (result: YoinkState["guestResult"]) => void;
 

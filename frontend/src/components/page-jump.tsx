@@ -4,9 +4,10 @@ interface PageJumpProps {
   pages: number[];
   onJump: (page: number) => void;
   currentPage?: number;
+  label?: string;
 }
 
-export function PageJump({ pages, onJump, currentPage }: PageJumpProps) {
+export function PageJump({ pages, onJump, currentPage, label = "Page" }: PageJumpProps) {
   if (pages.length <= 1) return null;
 
   return (
@@ -17,6 +18,7 @@ export function PageJump({ pages, onJump, currentPage }: PageJumpProps) {
             <button
               key={page}
               onClick={() => onJump(page)}
+              aria-label={`${label} ${page}`}
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-medium transition-colors ${
                 currentPage === page
                   ? "bg-primary text-primary-foreground"
