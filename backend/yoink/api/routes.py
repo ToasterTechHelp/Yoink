@@ -8,8 +8,9 @@ import shutil
 import uuid
 from pathlib import Path
 from time import perf_counter
+from typing import List
 
-from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Response, UploadFile
 
 from yoink.api.auth import get_optional_user
 from yoink.api.models import (
@@ -47,6 +48,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB
+MAX_UPLOAD_FILES = 50
 MAX_USER_SLOTS = 5
 UPLOAD_DIR = Path("./uploads")
 API_URL = os.environ.get("YOINK_API_URL", "http://127.0.0.1:8000")
@@ -99,18 +101,39 @@ def _validate_base_name(base_name: str) -> str:
     },
 )
 async def extract(
-    request: Request, file: UploadFile, sensitivity: str = Form("balanced"),
+    request: Request,
+    files: List[UploadFile] = File(...),
+    sensitivity: str = Form("balanced"),
 ):
-    """Upload a file and start an extraction job.
+    """Upload one or more files and start an extraction job.
 
-    - Guest (no token): 1 file, results saved to /static/guest/{job_id}/
-    - User (valid token): 1 file, results uploaded to Supabase Storage.
+    - Single PDF or image: processed as before.
+    - Multiple files: all must be images (no PDFs). Each image becomes a "page".
+    - Guest (no token): results saved to /static/guest/{job_id}/
+    - User (valid token): results uploaded to Supabase Storage.
       Rejected if user already has 5 saved jobs.
     """
     job_store = request.app.state.job_store
     worker: ExtractionWorker = request.app.state.worker
     supabase = request.app.state.supabase
     conf = SENSITIVITY_PRESETS.get(sensitivity, 0.2)
+
+    if len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Too many files. Maximum is {MAX_UPLOAD_FILES}.",
+        )
+
+    # When multiple files are uploaded, all must be images
+    IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"}
+    if len(files) > 1:
+        for f in files:
+            ext = Path(f.filename or "").suffix.lower()
+            if ext not in IMAGE_EXTENSIONS:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Multi-file upload only supports images. '{f.filename}' is not an image.",
+                )
 
     # Authenticate (optional)
     user_id = await get_optional_user(request)
@@ -124,35 +147,59 @@ async def extract(
                 detail=f"Slot limit reached ({slot_count}/{MAX_USER_SLOTS}). Delete a job to continue.",
             )
 
-    # Read file content and check size
-    content = await file.read()
-    if len(content) > MAX_UPLOAD_SIZE:
+    # Read all file contents and check total size
+    file_contents: list[tuple[str, bytes]] = []
+    total_size = 0
+    for f in files:
+        content = await f.read()
+        total_size += len(content)
+        file_contents.append((f.filename or "upload", content))
+
+    if total_size > MAX_UPLOAD_SIZE:
         raise HTTPException(
             status_code=413,
-            detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024*1024)}MB.",
+            detail=f"Total upload size too large. Maximum is {MAX_UPLOAD_SIZE // (1024*1024)}MB.",
         )
 
-    # Save upload to a unique directory
+    # Save uploads to a unique directory
     upload_id = uuid.uuid4().hex
     upload_dir = UPLOAD_DIR / upload_id
     upload_dir.mkdir(parents=True, exist_ok=True)
-    upload_path = upload_dir / file.filename
-    upload_path.write_bytes(content)
-    logger.info("Saved upload: %s (%d bytes)", upload_path, len(content))
+
+    saved_paths: list[Path] = []
+    for idx, (filename, content) in enumerate(file_contents):
+        # Index-prefix filenames to avoid collisions
+        safe_name = f"{idx}_{filename}" if len(file_contents) > 1 else filename
+        upload_path = upload_dir / safe_name
+        upload_path.write_bytes(content)
+        saved_paths.append(upload_path)
+        logger.info("Saved upload: %s (%d bytes)", upload_path, len(content))
+
+    # Display name for the job
+    if len(files) == 1:
+        display_name = files[0].filename or "upload"
+    else:
+        display_name = f"{len(files)} images"
+
+    # Extra paths for multi-image (all paths beyond the first)
+    extra_paths_json: str | None = None
+    if len(saved_paths) > 1:
+        extra_paths_json = json.dumps([str(p) for p in saved_paths[1:]])
 
     # Create job and enqueue
     job_id = await job_store.create_job(
-        filename=file.filename,
-        upload_path=str(upload_path),
+        filename=display_name,
+        upload_path=str(saved_paths[0]),
         user_id=user_id,
         conf=conf,
+        extra_paths=extra_paths_json,
     )
 
     # For authenticated users, create a Supabase row immediately so the
     # job is visible in "Recent Uploads" even if the user refreshes.
     if user_id and supabase:
         try:
-            await create_job_in_supabase(user_id, job_id, file.filename, supabase)
+            await create_job_in_supabase(user_id, job_id, display_name, supabase)
         except Exception:
             # Supabase INSERT failed — clean up SQLite job + uploaded file
             logger.exception("Failed to create Supabase job row for %s", job_id)
@@ -222,6 +269,8 @@ async def get_job_result(request: Request, job_id: str):
 
     is_guest = job["user_id"] is None
 
+    source_type = result_data.get("source_type", "pdf")
+
     if is_guest:
         # Build static URLs for guest components
         components = []
@@ -243,6 +292,7 @@ async def get_job_result(request: Request, job_id: str):
             total_pages=result_data["total_pages"],
             total_components=result_data["total_components"],
             components=components,
+            source_type=source_type,
         )
     else:
         return ResultMetadataResponse(
@@ -250,6 +300,7 @@ async def get_job_result(request: Request, job_id: str):
             total_pages=result_data["total_pages"],
             total_components=result_data["total_components"],
             is_guest=False,
+            source_type=source_type,
         )
 
 

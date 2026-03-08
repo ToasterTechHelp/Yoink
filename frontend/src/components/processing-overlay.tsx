@@ -9,9 +9,10 @@ import { useYoinkStore } from "@/store/useYoinkStore";
 interface ProcessingOverlayProps {
   canDismiss?: boolean;
   onDismiss?: () => void;
+  sourceType?: string;
 }
 
-export function ProcessingOverlay({ canDismiss, onDismiss }: ProcessingOverlayProps) {
+export function ProcessingOverlay({ canDismiss, onDismiss, sourceType }: ProcessingOverlayProps) {
   const status = useYoinkStore((s) => s.activeJobStatus);
   const progress = useYoinkStore((s) => s.activeJobProgress);
   const error = useYoinkStore((s) => s.activeJobError);
@@ -71,7 +72,7 @@ export function ProcessingOverlay({ canDismiss, onDismiss }: ProcessingOverlayPr
                 </p>
                 {status === "processing" && progress.total > 0 && (
                   <p className="text-xs text-muted-foreground">
-                    Page {progress.current} of {progress.total}
+                    {sourceType === "images" ? "Image" : "Page"} {progress.current} of {progress.total}
                   </p>
                 )}
               </div>

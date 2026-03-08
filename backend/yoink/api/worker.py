@@ -147,6 +147,12 @@ class ExtractionWorker:
             )
 
         try:
+            # Parse extra_paths for multi-image jobs
+            extra_image_files = None
+            raw_extra = job.get("extra_paths")
+            if raw_extra:
+                extra_image_files = json.loads(raw_extra)
+
             # Run the CPU-intensive pipeline in a thread pool to avoid
             # blocking the event loop and other async operations
             result = await asyncio.to_thread(
@@ -156,6 +162,7 @@ class ExtractionWorker:
                 extractor=self._extractor,
                 conf=job.get("conf", 0.2),
                 progress_callback=progress_callback,
+                extra_image_files=extra_image_files,
             )
 
             # Construct the path to the result JSON file
@@ -169,6 +176,7 @@ class ExtractionWorker:
                 # --- User flow: upload to Supabase Storage + DB ---
                 await self._handle_user_result(
                     user_id, job_id, job["filename"], result, result_path,
+                    source_type=result.get("source_type", "pdf"),
                 )
             else:
                 # --- Guest flow: save PNGs to /static/guest/{job_id}/ ---
@@ -231,6 +239,7 @@ class ExtractionWorker:
         filename: str,
         result: dict,
         result_path: Path,
+        source_type: str = "pdf",
     ) -> None:
         """Upload component images to Supabase Storage and save job to Supabase DB."""
         with open(result_path, "r", encoding="utf-8") as f:
@@ -254,6 +263,7 @@ class ExtractionWorker:
             total_components=result["total_components"],
             components=components,
             supabase=self._supabase,
+            source_type=source_type,
         )
 
         logger.info("User job %s: uploaded to Supabase for user %s", job_id, user_id)

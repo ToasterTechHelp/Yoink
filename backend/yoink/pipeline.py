@@ -3,9 +3,9 @@
 import logging
 import tempfile
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
-from yoink.converter import convert_file
+from yoink.converter import convert_file, convert_images, detect_file_type
 from yoink.encoder import assemble_output, build_page_entry, write_json
 from yoink.extractor import LayoutExtractor
 from yoink.mapper import map_and_crop
@@ -23,6 +23,7 @@ def run_pipeline(
     device: Optional[str] = None,
     dpi: int = 200,
     progress_callback: Optional[Callable[[int, int], None]] = None,
+    extra_image_files: Optional[List[str | Path]] = None,
 ) -> Dict[str, Any]:
     """
     Run the full extraction pipeline on an input file.
@@ -40,6 +41,9 @@ def run_pipeline(
         device: Device string (only used if extractor is None).
         dpi: PDF rendering resolution.
         progress_callback: Called with (current_page, total_pages) after each page.
+        extra_image_files: Additional image files for multi-image upload.
+            When provided, input_file + extra_image_files are combined and
+            treated as a multi-image job (source_type="images").
 
     Returns:
         The assembled output dict (same structure as the JSON file).
@@ -52,8 +56,17 @@ def run_pipeline(
 
     # Step 1: Convert file to page images
     with tempfile.TemporaryDirectory(prefix="yoink_pages_") as tmp_dir:
-        pages = convert_file(input_file, output_dir=tmp_dir, dpi=dpi)
-        logger.info("Converted %d page(s)", len(pages))
+        if extra_image_files is not None:
+            # Multi-image upload: combine all files into one image list
+            all_image_paths = [input_file] + [Path(f) for f in extra_image_files]
+            pages = convert_images(all_image_paths, Path(tmp_dir))
+            source_type = "images"
+        else:
+            # Single-file upload: existing behavior
+            pages = convert_file(input_file, output_dir=tmp_dir, dpi=dpi)
+            file_type = detect_file_type(input_file)
+            source_type = "pdf" if file_type == "pdf" else "images"
+        logger.info("Converted %d page(s) (source_type=%s)", len(pages), source_type)
 
         # Step 2: Use provided extractor or create one
         if extractor is None:
@@ -93,6 +106,7 @@ def run_pipeline(
         output_data = assemble_output(
             source_file=input_file.name,
             pages=page_entries,
+            source_type=source_type,
         )
 
         output_filename = input_file.stem + "_extracted.json"

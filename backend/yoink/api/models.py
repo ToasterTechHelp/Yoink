@@ -62,6 +62,7 @@ class ResultMetadataResponse(BaseModel):
     total_pages: int
     total_components: int
     is_guest: bool = False
+    source_type: str = "pdf"
 
 
 class ComponentBatchResponse(BaseModel):
@@ -90,6 +91,7 @@ class GuestResultResponse(BaseModel):
     total_pages: int
     total_components: int
     components: list[ComponentOut]
+    source_type: str = "pdf"
 
 
 class ErrorResponse(BaseModel):
