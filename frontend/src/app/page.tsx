@@ -50,7 +50,7 @@ export default function Home() {
     const fetchJobs = async () => {
       const { data, error } = await supabase
         .from("jobs")
-        .select("*")
+        .select("id, user_id, title, status, created_at, total_pages, total_components, source_type")
         .order("created_at", { ascending: false });
 
       if (!error && data) {
@@ -83,7 +83,7 @@ export default function Home() {
               // Auth user — refresh job list from Supabase and navigate
               const { data } = await supabase
                 .from("jobs")
-                .select("*")
+                .select("id, user_id, title, status, created_at, total_pages, total_components, source_type")
                 .order("created_at", { ascending: false });
               if (data) setUserJobs(data as SupabaseJob[]);
               router.push(`/jobs/${jobId}`);
@@ -164,7 +164,7 @@ export default function Home() {
     if (supabase) {
       const { data } = await supabase
         .from("jobs")
-        .select("*")
+        .select("id, user_id, title, status, created_at, total_pages, total_components, source_type")
         .order("created_at", { ascending: false });
       if (data) setUserJobs(data as SupabaseJob[]);
     }
@@ -195,25 +195,21 @@ export default function Home() {
       const job = userJobs.find((j) => j.id === jobId);
       if (!job) throw new Error("Job not found");
 
-      // Delete storage objects first (PNGs in Supabase Storage)
+      // List storage files for this job, then delete files + DB row in parallel
       const storagePrefix = `${job.user_id}/${jobId.replaceAll("-", "")}`;
       const { data: files } = await supabase.storage
         .from("scans")
         .list(storagePrefix);
-      if (files && files.length > 0) {
-        const paths = files.map((f: { name: string }) => `${storagePrefix}/${f.name}`);
-        const { error: storageErr } = await supabase.storage
-          .from("scans")
-          .remove(paths);
-        if (storageErr) throw new Error("Failed to delete files");
-      }
 
-      // Delete the database row (RLS enforces ownership)
-      const { error: dbErr } = await supabase
-        .from("jobs")
-        .delete()
-        .eq("id", jobId);
-      if (dbErr) throw new Error("Failed to delete job record");
+      const [storageResult, dbResult] = await Promise.all([
+        files && files.length > 0
+          ? supabase.storage.from("scans").remove(files.map((f: { name: string }) => `${storagePrefix}/${f.name}`))
+          : Promise.resolve({ error: null }),
+        supabase.from("jobs").delete().eq("id", jobId),
+      ]);
+
+      if (storageResult.error) throw new Error("Failed to delete files");
+      if (dbResult.error) throw new Error("Failed to delete job record");
 
       setUserJobs(userJobs.filter((j) => j.id !== jobId));
       toast.success("Job deleted");
