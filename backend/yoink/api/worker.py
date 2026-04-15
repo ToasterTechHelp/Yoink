@@ -193,6 +193,24 @@ class ExtractionWorker:
             )
             logger.info("Job %s completed: %d components", job_id, result["total_components"])
 
+            # Eager cleanup for auth users: local files are no longer needed
+            # since data is now in Supabase Storage + DB.
+            if user_id and self._supabase:
+                upload_dir = Path(job["upload_path"]).parent
+                shutil.rmtree(upload_dir, ignore_errors=True)
+                shutil.rmtree(output_dir, ignore_errors=True)
+
+                # Delay SQLite row deletion so the frontend poll sees
+                # "completed" before the row disappears (~2s poll interval).
+                async def _deferred_sqlite_cleanup(
+                    jid: str = job_id, delay: int = 30,
+                ) -> None:
+                    await asyncio.sleep(delay)
+                    await self._job_store.delete_job(jid)
+                    logger.info("Deferred SQLite cleanup for auth job %s", jid)
+
+                asyncio.create_task(_deferred_sqlite_cleanup())
+
         except Exception as e:
             # Mark job as failed and store the error message
             logger.exception("Job %s failed", job_id)

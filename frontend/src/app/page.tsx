@@ -11,7 +11,7 @@ import { JobCard } from "@/components/job-card";
 import { RenameUploadDialog } from "@/components/rename-upload-dialog";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/client";
-import { uploadFile, pollJobStatus, getJobResult, deleteJob } from "@/lib/api";
+import { uploadFile, pollJobStatus, getGuestJobResult } from "@/lib/api";
 import { useYoinkStore } from "@/store/useYoinkStore";
 import type { GuestResult } from "@/lib/api";
 import type { SupabaseJob } from "@/store/useYoinkStore";
@@ -50,7 +50,7 @@ export default function Home() {
     const fetchJobs = async () => {
       const { data, error } = await supabase
         .from("jobs")
-        .select("*")
+        .select("id, user_id, title, status, created_at, total_pages, total_components, source_type")
         .order("created_at", { ascending: false });
 
       if (!error && data) {
@@ -79,12 +79,17 @@ export default function Home() {
             if (pollRef.current) clearInterval(pollRef.current);
             updateJobStatus("completed");
 
-            // Fetch result
-            const result = await getJobResult(jobId);
-
-            if ("components" in result) {
-              // Guest result — store in Zustand and navigate
-              const guestData = result as GuestResult;
+            if (user && supabase) {
+              // Auth user — refresh job list from Supabase and navigate
+              const { data } = await supabase
+                .from("jobs")
+                .select("id, user_id, title, status, created_at, total_pages, total_components, source_type")
+                .order("created_at", { ascending: false });
+              if (data) setUserJobs(data as SupabaseJob[]);
+              router.push(`/jobs/${jobId}`);
+            } else {
+              // Guest — fetch result from backend and navigate
+              const guestData = await getGuestJobResult(jobId);
               setGuestResult({
                 jobId,
                 sourceFile: guestData.source_file,
@@ -94,16 +99,6 @@ export default function Home() {
                 sourceType: guestData.source_type ?? "pdf",
               });
               router.push(`/jobs/${jobId}?guest=true`);
-            } else {
-              // User result — refresh job list and navigate
-              if (supabase) {
-                const { data } = await supabase
-                  .from("jobs")
-                  .select("*")
-                  .order("created_at", { ascending: false });
-                if (data) setUserJobs(data as SupabaseJob[]);
-              }
-              router.push(`/jobs/${jobId}`);
             }
 
             resetActiveJob();
@@ -116,7 +111,7 @@ export default function Home() {
         }
       }, 1500);
     },
-    [updateJobStatus, resetActiveJob, setGuestResult, setUserJobs, supabase, router]
+    [user, updateJobStatus, resetActiveJob, setGuestResult, setUserJobs, supabase, router]
   );
 
   // Cleanup polling on unmount
@@ -169,7 +164,7 @@ export default function Home() {
     if (supabase) {
       const { data } = await supabase
         .from("jobs")
-        .select("*")
+        .select("id, user_id, title, status, created_at, total_pages, total_components, source_type")
         .order("created_at", { ascending: false });
       if (data) setUserJobs(data as SupabaseJob[]);
     }
@@ -197,11 +192,25 @@ export default function Home() {
 
   const handleDeleteJob = async (jobId: string) => {
     try {
-      const token = await getAccessToken();
-      if (!token) {
-        throw new Error("Authentication required");
-      }
-      await deleteJob(jobId, token);
+      const job = userJobs.find((j) => j.id === jobId);
+      if (!job) throw new Error("Job not found");
+
+      // List storage files for this job, then delete files + DB row in parallel
+      const storagePrefix = `${job.user_id}/${jobId.replaceAll("-", "")}`;
+      const { data: files } = await supabase.storage
+        .from("scans")
+        .list(storagePrefix);
+
+      const [storageResult, dbResult] = await Promise.all([
+        files && files.length > 0
+          ? supabase.storage.from("scans").remove(files.map((f: { name: string }) => `${storagePrefix}/${f.name}`))
+          : Promise.resolve({ error: null }),
+        supabase.from("jobs").delete().eq("id", jobId),
+      ]);
+
+      if (storageResult.error) throw new Error("Failed to delete files");
+      if (dbResult.error) throw new Error("Failed to delete job record");
+
       setUserJobs(userJobs.filter((j) => j.id !== jobId));
       toast.success("Job deleted");
     } catch (err: any) {
@@ -322,7 +331,6 @@ export default function Home() {
         job={renameTarget}
         onClose={closeRenameDialog}
         onRenamed={handleRenamed}
-        getAccessToken={getAccessToken}
       />
     </>
   );

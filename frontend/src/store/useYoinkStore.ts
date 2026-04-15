@@ -12,6 +12,7 @@ export interface SupabaseJob {
   total_components: number;
   results: { components: ComponentData[]; source_type?: string } | null;
   storage_path: string | null;
+  source_type?: string;
 }
 
 interface YoinkState {

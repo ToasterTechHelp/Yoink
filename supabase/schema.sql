@@ -10,8 +10,9 @@ CREATE TABLE public.jobs (
   title             TEXT NOT NULL,               
   total_pages       INTEGER DEFAULT 0,
   total_components  INTEGER DEFAULT 0,
-  results           JSONB,                       
-  storage_path      TEXT                         
+  results           JSONB,
+  storage_path      TEXT,
+  source_type       TEXT DEFAULT 'pdf'
 );
 
 CREATE INDEX idx_jobs_user_id ON public.jobs (user_id);
@@ -32,6 +33,11 @@ CREATE POLICY "Users can insert own jobs"
 CREATE POLICY "Users can delete own jobs"
   ON public.jobs FOR DELETE
   USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own jobs"
+  ON public.jobs FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
 
 -- ============================================================

@@ -10,7 +10,7 @@ import { CategoryFilter } from "@/components/category-filter";
 import { PageJump } from "@/components/page-jump";
 import { createClient } from "@/lib/supabase/client";
 import { useYoinkStore } from "@/store/useYoinkStore";
-import { submitFeedback, getJobResult, buildTransparentRenderUrl } from "@/lib/api";
+import { submitFeedback, getGuestJobResult, buildTransparentRenderUrl } from "@/lib/api";
 import type { ComponentData } from "@/lib/api";
 import type { SupabaseJob } from "@/store/useYoinkStore";
 
@@ -71,21 +71,15 @@ export default function ResultsPage() {
 
       if (isGuest) {
         try {
-          const data = await getJobResult(jobId);
-          if ("components" in data) {
-            setComponents(data.components);
-            setSourceFile(data.source_file);
-            setTotalComponents(data.total_components);
-            setTotalPages(data.total_pages);
-            setSourceType(data.source_type ?? "pdf");
+          const data = await getGuestJobResult(jobId);
+          setComponents(data.components);
+          setSourceFile(data.source_file);
+          setTotalComponents(data.total_components);
+          setTotalPages(data.total_pages);
+          setSourceType(data.source_type ?? "pdf");
 
-            const cats = new Set(data.components.map((c) => c.category));
-            setActiveCategories(cats);
-          } else {
-            toast.error("Guest job not found");
-            router.push("/");
-            return;
-          }
+          const cats = new Set(data.components.map((c) => c.category));
+          setActiveCategories(cats);
         } catch (error) {
           console.error(error);
           toast.error("Failed to load guest job");
