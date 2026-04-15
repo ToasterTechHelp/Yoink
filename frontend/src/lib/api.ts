@@ -32,14 +32,6 @@ export interface GuestResult {
   source_type?: "pdf" | "images";
 }
 
-export interface UserResultMeta {
-  source_file: string;
-  total_pages: number;
-  total_components: number;
-  is_guest: boolean;
-  source_type?: "pdf" | "images";
-}
-
 export async function uploadFile(
   files: File | File[],
   token?: string,
@@ -82,49 +74,14 @@ export async function pollJobStatus(jobId: string): Promise<JobStatus> {
   return res.json();
 }
 
-export async function getJobResult(
+export async function getGuestJobResult(
   jobId: string
-): Promise<GuestResult | UserResultMeta> {
+): Promise<GuestResult> {
   const res = await fetch(`${API_URL}/api/v1/jobs/${jobId}/result`);
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.detail || "Failed to get result");
   }
-  return res.json();
-}
-
-export async function deleteJob(jobId: string, token: string): Promise<void> {
-  const res = await fetch(`${API_URL}/api/v1/jobs/${jobId}`, {
-    method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  if (!res.ok && res.status !== 204) {
-    const err = await res.json();
-    throw new Error(err.detail || "Failed to delete job");
-  }
-}
-
-export async function renameUpload(
-  jobId: string,
-  baseName: string,
-  token: string
-): Promise<{ job_id: string; title: string }> {
-  const res = await fetch(`${API_URL}/api/v1/jobs/${jobId}/rename`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ base_name: baseName }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.detail || "Failed to rename upload");
-  }
-
   return res.json();
 }
 

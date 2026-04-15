@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { renameUpload } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
 import type { SupabaseJob } from "@/store/useYoinkStore";
 
 const MAX_BASE_NAME_LENGTH = 120;
@@ -33,7 +33,6 @@ interface RenameUploadDialogProps {
   job: SupabaseJob | null;
   onClose: () => void;
   onRenamed: (jobId: string, title: string) => void;
-  getAccessToken: () => Promise<string | undefined>;
 }
 
 export function RenameUploadDialog({
@@ -41,8 +40,8 @@ export function RenameUploadDialog({
   job,
   onClose,
   onRenamed,
-  getAccessToken,
 }: RenameUploadDialogProps) {
+  const supabase = useMemo(() => createClient(), []);
   const [baseName, setBaseName] = useState("");
   const [extension, setExtension] = useState("");
   const [loading, setLoading] = useState(false);
@@ -78,13 +77,15 @@ export function RenameUploadDialog({
 
     setLoading(true);
     try {
-      const token = await getAccessToken();
-      if (!token) {
-        throw new Error("Authentication required");
-      }
+      const newTitle = cleaned + extension;
+      const { error } = await supabase
+        .from("jobs")
+        .update({ title: newTitle })
+        .eq("id", job.id);
 
-      const result = await renameUpload(job.id, cleaned, token);
-      onRenamed(job.id, result.title);
+      if (error) throw new Error(error.message);
+
+      onRenamed(job.id, newTitle);
       toast.success("Upload renamed");
       onClose();
     } catch (err: any) {

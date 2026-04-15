@@ -185,6 +185,7 @@ async def complete_job_in_supabase(
                 "total_components": total_components,
                 "results": {"components": components, "source_type": source_type},
                 "storage_path": storage_path,
+                "source_type": source_type,
             }
         ).eq("id", job_id).execute(),
     )

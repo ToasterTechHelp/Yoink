@@ -3,7 +3,6 @@
 import json
 import logging
 import os
-import re
 import shutil
 import uuid
 from pathlib import Path
@@ -24,9 +23,6 @@ from yoink.api.models import (
     JobResponse,
     JobStatusResponse,
     ProgressInfo,
-    RenameJobRequest,
-    RenameJobResponse,
-    ResultMetadataResponse,
 )
 from yoink.api.transparent_render import (
     MAX_SOURCE_IMAGE_BYTES,
@@ -34,12 +30,7 @@ from yoink.api.transparent_render import (
     make_background_transparent,
     parse_and_validate_source_url,
 )
-from yoink.api.user_jobs import (
-    count_user_jobs,
-    delete_user_job,
-    get_user_job,
-    rename_user_job,
-)
+from yoink.api.user_jobs import count_user_jobs
 from yoink.api.storage import create_job_in_supabase
 from yoink.api.worker import ExtractionWorker
 
@@ -52,8 +43,6 @@ MAX_UPLOAD_FILES = 50
 MAX_USER_SLOTS = 5
 UPLOAD_DIR = Path("./uploads")
 API_URL = os.environ.get("YOINK_API_URL", "http://127.0.0.1:8000")
-MAX_BASE_NAME_LENGTH = 120
-INVALID_BASE_NAME_PATTERN = re.compile(r"[\\/]|[\x00-\x1f\x7f]")
 
 SENSITIVITY_PRESETS = {
     "fastest": 0.5,
@@ -70,24 +59,6 @@ def _normalize_job_id(job_id: str) -> str:
         return uuid.UUID(job_id).hex
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Invalid job ID format") from exc
-
-
-def _validate_base_name(base_name: str) -> str:
-    """Validate and sanitize rename base name."""
-    cleaned = base_name.strip()
-    if not cleaned:
-        raise HTTPException(status_code=422, detail="Name cannot be empty")
-    if len(cleaned) > MAX_BASE_NAME_LENGTH:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Name must be at most {MAX_BASE_NAME_LENGTH} characters",
-        )
-    if INVALID_BASE_NAME_PATTERN.search(cleaned):
-        raise HTTPException(
-            status_code=422,
-            detail="Name cannot contain slashes or control characters",
-        )
-    return cleaned
 
 
 @router.post(
@@ -243,16 +214,22 @@ async def get_job_status(request: Request, job_id: str):
     responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
 )
 async def get_job_result(request: Request, job_id: str):
-    """Get extraction result.
+    """Get extraction result for guest jobs.
 
-    - Guest jobs: returns full GuestResultResponse with static URLs.
-    - User jobs: returns ResultMetadataResponse (frontend reads from Supabase).
+    Returns full GuestResultResponse with static URLs.
+    Authenticated user jobs read directly from Supabase.
     """
     job_id = _normalize_job_id(job_id)
     job_store = request.app.state.job_store
     job = await job_store.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    if job["user_id"] is not None:
+        raise HTTPException(
+            status_code=410,
+            detail="Authenticated job results are served from Supabase",
+        )
 
     if job["status"] != "completed":
         raise HTTPException(
@@ -267,41 +244,29 @@ async def get_job_result(request: Request, job_id: str):
     with open(result_path, "r", encoding="utf-8") as f:
         result_data = json.load(f)
 
-    is_guest = job["user_id"] is None
-
     source_type = result_data.get("source_type", "pdf")
 
-    if is_guest:
-        # Build static URLs for guest components
-        components = []
-        for page in result_data.get("pages", []):
-            for comp in page.get("components", []):
-                components.append(
-                    ComponentOut(
-                        id=comp["id"],
-                        page_number=page["page_number"],
-                        category=comp.get("category", ""),
-                        original_label=comp.get("original_label", ""),
-                        confidence=comp.get("confidence", 0),
-                        bbox=comp.get("bbox", []),
-                        url=f"{API_URL}/static/guest/{job_id}/{comp['id']}.png",
-                    )
+    components = []
+    for page in result_data.get("pages", []):
+        for comp in page.get("components", []):
+            components.append(
+                ComponentOut(
+                    id=comp["id"],
+                    page_number=page["page_number"],
+                    category=comp.get("category", ""),
+                    original_label=comp.get("original_label", ""),
+                    confidence=comp.get("confidence", 0),
+                    bbox=comp.get("bbox", []),
+                    url=f"{API_URL}/static/guest/{job_id}/{comp['id']}.png",
                 )
-        return GuestResultResponse(
-            source_file=result_data["source_file"],
-            total_pages=result_data["total_pages"],
-            total_components=result_data["total_components"],
-            components=components,
-            source_type=source_type,
-        )
-    else:
-        return ResultMetadataResponse(
-            source_file=result_data["source_file"],
-            total_pages=result_data["total_pages"],
-            total_components=result_data["total_components"],
-            is_guest=False,
-            source_type=source_type,
-        )
+            )
+    return GuestResultResponse(
+        source_file=result_data["source_file"],
+        total_pages=result_data["total_pages"],
+        total_components=result_data["total_components"],
+        components=components,
+        source_type=source_type,
+    )
 
 
 @router.get(
@@ -312,16 +277,22 @@ async def get_job_result(request: Request, job_id: str):
 async def get_result_components(
     request: Request, job_id: str, offset: int = 0, limit: int = 10,
 ):
-    """Get a batch of components from the extraction result.
+    """Get a batch of components from a guest extraction result.
 
-    Primarily used for guest jobs. User jobs read directly from Supabase.
     Returns components with static URLs (no base64).
+    Authenticated user jobs read directly from Supabase.
     """
     job_id = _normalize_job_id(job_id)
     job_store = request.app.state.job_store
     job = await job_store.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    if job["user_id"] is not None:
+        raise HTTPException(
+            status_code=410,
+            detail="Authenticated job results are served from Supabase",
+        )
 
     if job["status"] != "completed":
         raise HTTPException(
@@ -336,25 +307,18 @@ async def get_result_components(
     with open(result_path, "r", encoding="utf-8") as f:
         result_data = json.load(f)
 
-    is_guest = job["user_id"] is None
-
-    # Flatten all components across pages, preserving page_number
     all_components = []
     for page in result_data["pages"]:
         for comp in page["components"]:
-            comp_out = {
+            all_components.append({
                 "id": comp["id"],
                 "page_number": page["page_number"],
                 "category": comp.get("category", ""),
                 "original_label": comp.get("original_label", ""),
                 "confidence": comp.get("confidence", 0),
                 "bbox": comp.get("bbox", []),
-            }
-            if is_guest:
-                comp_out["url"] = f"{API_URL}/static/guest/{job_id}/{comp['id']}.png"
-            else:
-                comp_out["url"] = comp.get("url", "")
-            all_components.append(comp_out)
+                "url": f"{API_URL}/static/guest/{job_id}/{comp['id']}.png",
+            })
 
     total = len(all_components)
     batch = all_components[offset : offset + limit]
@@ -479,122 +443,6 @@ async def render_transparent_png(request: Request, src: str = Query(..., min_len
             "X-Content-Type-Options": "nosniff",
         },
     )
-
-
-@router.delete(
-    "/jobs/{job_id}",
-    status_code=204,
-    responses={
-        401: {"model": ErrorResponse},
-        403: {"model": ErrorResponse},
-        404: {"model": ErrorResponse},
-        422: {"model": ErrorResponse},
-        502: {"model": ErrorResponse},
-    },
-)
-async def delete_job(request: Request, job_id: str):
-    """Cancel and clean up a job.
-
-    - Authenticated user jobs are deleted from Supabase (source of truth).
-    - Guest jobs cannot be manually deleted.
-    """
-    requester_id = await get_optional_user(request)
-    if requester_id is None:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    job_id = _normalize_job_id(job_id)
-    job_store = request.app.state.job_store
-    supabase = request.app.state.supabase
-
-    # Explicitly block manual guest delete when a local guest job exists.
-    local_job = await job_store.get_job(job_id)
-    if local_job is not None and local_job.get("user_id") is None:
-        raise HTTPException(status_code=403, detail="Guest jobs cannot be deleted manually")
-
-    if supabase is None:
-        raise HTTPException(status_code=502, detail="Supabase is not configured")
-
-    # Supabase is authoritative for authenticated user jobs.
-    if await get_user_job(requester_id, job_id, supabase) is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    try:
-        await delete_user_job(requester_id, job_id, supabase)
-    except Exception:
-        logger.exception(
-            "Delete failed at Supabase stage (job_id=%s requester_id=%s stage=supabase_delete)",
-            job_id,
-            requester_id,
-        )
-        raise HTTPException(status_code=502, detail="Failed to delete job resources")
-
-    # Best-effort local cleanup for drifted local rows.
-    if local_job is not None:
-        ExtractionWorker.cleanup_job_files(local_job.get("upload_path"), local_job.get("result_path"))
-        await job_store.delete_job(job_id)
-
-    logger.info("Deleted user job %s for requester %s", job_id, requester_id)
-
-
-@router.patch(
-    "/jobs/{job_id}/rename",
-    response_model=RenameJobResponse,
-    responses={
-        401: {"model": ErrorResponse},
-        404: {"model": ErrorResponse},
-        422: {"model": ErrorResponse},
-        502: {"model": ErrorResponse},
-    },
-)
-async def rename_job(request: Request, job_id: str, body: RenameJobRequest):
-    """Rename a saved upload for an authenticated user."""
-    requester_id = await get_optional_user(request)
-    if requester_id is None:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    job_id = _normalize_job_id(job_id)
-    supabase = request.app.state.supabase
-
-    if supabase is None:
-        raise HTTPException(status_code=502, detail="Supabase is not configured")
-
-    user_job = await get_user_job(requester_id, job_id, supabase)
-    if user_job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    base_name = _validate_base_name(body.base_name)
-    old_title = user_job.title
-    extension = Path(old_title).suffix
-    new_title = f"{base_name}{extension}"
-
-    if old_title == new_title:
-        return RenameJobResponse(job_id=job_id, title=new_title)
-
-    try:
-        await rename_user_job(
-            user_id=requester_id,
-            job_id_hex=job_id,
-            title=new_title,
-            supabase=supabase,
-        )
-    except Exception:
-        logger.exception(
-            "Rename failed at Supabase stage (job_id=%s requester_id=%s stage=supabase_rename)",
-            job_id,
-            requester_id,
-        )
-        raise HTTPException(
-            status_code=502,
-            detail="Failed to rename job",
-        )
-
-    # Best-effort local sync if a matching local user row still exists.
-    job_store = request.app.state.job_store
-    local_job = await job_store.get_job(job_id)
-    if local_job is not None and local_job.get("user_id") == requester_id:
-        await job_store.rename_job(job_id, new_title)
-
-    return RenameJobResponse(job_id=job_id, title=new_title)
 
 
 @router.post(
