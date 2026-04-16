@@ -212,19 +212,13 @@ export default function Home() {
   };
 
   const handleDeleteJob = async (jobId: string) => {
-    const job = userJobs.find((j) => j.id === jobId);
-    if (!job) return;
-
-    const snapshot = userJobs;
-    setUserJobs(userJobs.filter((j) => j.id !== jobId));
-    toast.success("Job deleted");
-
     try {
       const token = await getAccessToken();
       if (!token) throw new Error("Not authenticated");
       await deleteJob(jobId, token);
+      setUserJobs(userJobs.filter((j) => j.id !== jobId));
+      toast.success("Job deleted");
     } catch (err: any) {
-      setUserJobs(snapshot);
       toast.error(err.message || "Failed to delete job");
     }
   };
