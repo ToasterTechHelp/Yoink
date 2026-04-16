@@ -31,7 +31,11 @@ from yoink.api.transparent_render import (
     parse_and_validate_source_url,
 )
 from yoink.api.user_jobs import count_user_jobs, get_user_job_status
-from yoink.api.storage import create_job_in_supabase, delete_user_job
+from yoink.api.storage import (
+    create_job_in_supabase,
+    delete_user_job_row,
+    delete_user_job_storage,
+)
 from yoink.api.worker import ExtractionWorker
 
 logger = logging.getLogger(__name__)
@@ -199,11 +203,13 @@ async def delete_job(
     job_id: str,
     background_tasks: BackgroundTasks,
 ):
-    """Schedule deletion of a user-owned job (storage + DB row).
+    """Delete a user-owned job.
 
-    Verifies ownership synchronously (404 if missing), blocks deletion while
-    the job is still processing (409), then schedules the actual storage +
-    row cleanup as a background task and returns 202.
+    Verifies ownership (404 if missing), blocks while the job is still
+    processing (409), synchronously deletes the jobs row (so the response is
+    truthful), then schedules storage cleanup as a background task and returns
+    202. Storage cleanup failures are logged server-side only; by then the
+    client has already been told the delete succeeded.
     """
     user_id = await get_optional_user(request)
     if user_id is None:
@@ -224,7 +230,15 @@ async def delete_job(
             detail="Cannot delete a job while it is still processing",
         )
 
-    background_tasks.add_task(delete_user_job, user_id, job_id_hex, supabase)
+    try:
+        await delete_user_job_row(user_id, job_id_hex, supabase)
+    except Exception:
+        logger.exception("Failed to delete jobs row %s for user %s", job_id_hex, user_id)
+        raise HTTPException(status_code=502, detail="Failed to delete job")
+
+    background_tasks.add_task(
+        delete_user_job_storage, user_id, job_id_hex, supabase
+    )
 
     return {"status": "deleting"}
 

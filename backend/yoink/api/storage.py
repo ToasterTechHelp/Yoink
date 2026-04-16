@@ -196,12 +196,36 @@ async def complete_job_in_supabase(
 _LIST_PAGE_SIZE = 100
 
 
-async def delete_user_job(
+async def delete_user_job_row(
     user_id: str,
     job_id_hex: str,
     supabase: SupabaseClient,
 ) -> None:
-    """Delete storage objects and the jobs row for a user-owned job.
+    """Synchronously delete the jobs row for a user-owned job.
+
+    Called before the DELETE route returns 202 so the API response is truthful:
+    by the time the client sees success, the row is actually gone.
+    Raises on failure — the route handler should translate that into a 502.
+    """
+    job_uuid = str(uuid.UUID(job_id_hex))
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(
+        None,
+        lambda: supabase.table("jobs")
+        .delete()
+        .eq("id", job_uuid)
+        .eq("user_id", user_id)
+        .execute(),
+    )
+    logger.info("Deleted jobs row %s for user %s", job_id_hex, user_id)
+
+
+async def delete_user_job_storage(
+    user_id: str,
+    job_id_hex: str,
+    supabase: SupabaseClient,
+) -> None:
+    """Delete all storage objects under a user/job prefix.
 
     Paginates the storage listing so jobs with >100 component PNGs are fully
     cleaned up. Runs as a FastAPI BackgroundTask — must never raise into the
@@ -212,13 +236,12 @@ async def delete_user_job(
         storage_prefix = f"{user_id}/{job_id_hex}"
 
         total_deleted = 0
-        offset = 0
         while True:
             files = await loop.run_in_executor(
                 None,
-                lambda off=offset: supabase.storage.from_(BUCKET_NAME).list(
+                lambda: supabase.storage.from_(BUCKET_NAME).list(
                     storage_prefix,
-                    {"limit": _LIST_PAGE_SIZE, "offset": off},
+                    {"limit": _LIST_PAGE_SIZE, "offset": 0},
                 ),
             )
             if not files:
@@ -231,29 +254,17 @@ async def delete_user_job(
             )
             total_deleted += len(paths)
 
-            # Last page — stop before issuing another list() that would return empty.
             if len(files) < _LIST_PAGE_SIZE:
                 break
-            # We just deleted this batch, so the next "page" starts back at offset 0.
-            offset = 0
 
         logger.info(
             "Deleted %d storage objects for job %s", total_deleted, job_id_hex
         )
-
-        job_uuid = str(uuid.UUID(job_id_hex))
-        await loop.run_in_executor(
-            None,
-            lambda: supabase.table("jobs")
-            .delete()
-            .eq("id", job_uuid)
-            .eq("user_id", user_id)
-            .execute(),
-        )
-        logger.info("Deleted jobs row %s for user %s", job_id_hex, user_id)
     except Exception:
         logger.exception(
-            "Background delete failed for job %s (user %s)", job_id_hex, user_id
+            "Background storage cleanup failed for job %s (user %s)",
+            job_id_hex,
+            user_id,
         )
 
 
