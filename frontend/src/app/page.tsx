@@ -11,7 +11,7 @@ import { JobCard } from "@/components/job-card";
 import { RenameUploadDialog } from "@/components/rename-upload-dialog";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/client";
-import { uploadFile, pollJobStatus, getGuestJobResult } from "@/lib/api";
+import { uploadFile, pollJobStatus, getGuestJobResult, deleteJob } from "@/lib/api";
 import { useYoinkStore } from "@/store/useYoinkStore";
 import { getGuestJobs, saveGuestJob } from "@/lib/guest-storage";
 import type { GuestResult } from "@/lib/api";
@@ -212,29 +212,19 @@ export default function Home() {
   };
 
   const handleDeleteJob = async (jobId: string) => {
+    const job = userJobs.find((j) => j.id === jobId);
+    if (!job) return;
+
+    const snapshot = userJobs;
+    setUserJobs(userJobs.filter((j) => j.id !== jobId));
+    toast.success("Job deleted");
+
     try {
-      const job = userJobs.find((j) => j.id === jobId);
-      if (!job) throw new Error("Job not found");
-
-      // List storage files for this job, then delete files + DB row in parallel
-      const storagePrefix = `${job.user_id}/${jobId.replaceAll("-", "")}`;
-      const { data: files } = await supabase.storage
-        .from("scans")
-        .list(storagePrefix);
-
-      const [storageResult, dbResult] = await Promise.all([
-        files && files.length > 0
-          ? supabase.storage.from("scans").remove(files.map((f: { name: string }) => `${storagePrefix}/${f.name}`))
-          : Promise.resolve({ error: null }),
-        supabase.from("jobs").delete().eq("id", jobId),
-      ]);
-
-      if (storageResult.error) throw new Error("Failed to delete files");
-      if (dbResult.error) throw new Error("Failed to delete job record");
-
-      setUserJobs(userJobs.filter((j) => j.id !== jobId));
-      toast.success("Job deleted");
+      const token = await getAccessToken();
+      if (!token) throw new Error("Not authenticated");
+      await deleteJob(jobId, token);
     } catch (err: any) {
+      setUserJobs(snapshot);
       toast.error(err.message || "Failed to delete job");
     }
   };

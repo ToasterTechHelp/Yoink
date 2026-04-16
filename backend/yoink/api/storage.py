@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import logging
+import uuid
 from typing import Any
 
 from supabase import Client as SupabaseClient
@@ -190,6 +191,70 @@ async def complete_job_in_supabase(
         ).eq("id", job_id).execute(),
     )
     logger.info("Completed job %s in Supabase for user %s", job_id, user_id)
+
+
+_LIST_PAGE_SIZE = 100
+
+
+async def delete_user_job(
+    user_id: str,
+    job_id_hex: str,
+    supabase: SupabaseClient,
+) -> None:
+    """Delete storage objects and the jobs row for a user-owned job.
+
+    Paginates the storage listing so jobs with >100 component PNGs are fully
+    cleaned up. Runs as a FastAPI BackgroundTask — must never raise into the
+    response cycle. Logs and swallows exceptions.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        storage_prefix = f"{user_id}/{job_id_hex}"
+
+        total_deleted = 0
+        offset = 0
+        while True:
+            files = await loop.run_in_executor(
+                None,
+                lambda off=offset: supabase.storage.from_(BUCKET_NAME).list(
+                    storage_prefix,
+                    {"limit": _LIST_PAGE_SIZE, "offset": off},
+                ),
+            )
+            if not files:
+                break
+
+            paths = [f"{storage_prefix}/{f['name']}" for f in files]
+            await loop.run_in_executor(
+                None,
+                lambda p=paths: supabase.storage.from_(BUCKET_NAME).remove(p),
+            )
+            total_deleted += len(paths)
+
+            # Last page — stop before issuing another list() that would return empty.
+            if len(files) < _LIST_PAGE_SIZE:
+                break
+            # We just deleted this batch, so the next "page" starts back at offset 0.
+            offset = 0
+
+        logger.info(
+            "Deleted %d storage objects for job %s", total_deleted, job_id_hex
+        )
+
+        job_uuid = str(uuid.UUID(job_id_hex))
+        await loop.run_in_executor(
+            None,
+            lambda: supabase.table("jobs")
+            .delete()
+            .eq("id", job_uuid)
+            .eq("user_id", user_id)
+            .execute(),
+        )
+        logger.info("Deleted jobs row %s for user %s", job_id_hex, user_id)
+    except Exception:
+        logger.exception(
+            "Background delete failed for job %s (user %s)", job_id_hex, user_id
+        )
 
 
 async def fail_job_in_supabase(

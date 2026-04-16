@@ -9,7 +9,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import List
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, Response, UploadFile
 
 from yoink.api.auth import get_optional_user
 from yoink.api.models import (
@@ -30,8 +30,8 @@ from yoink.api.transparent_render import (
     make_background_transparent,
     parse_and_validate_source_url,
 )
-from yoink.api.user_jobs import count_user_jobs
-from yoink.api.storage import create_job_in_supabase
+from yoink.api.user_jobs import count_user_jobs, get_user_job_status
+from yoink.api.storage import create_job_in_supabase, delete_user_job
 from yoink.api.worker import ExtractionWorker
 
 logger = logging.getLogger(__name__)
@@ -181,6 +181,52 @@ async def extract(
     await worker.enqueue(job_id)
 
     return JobResponse(job_id=job_id, status="queued")
+
+
+@router.delete(
+    "/jobs/{job_id}",
+    status_code=202,
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+    },
+)
+async def delete_job(
+    request: Request,
+    job_id: str,
+    background_tasks: BackgroundTasks,
+):
+    """Schedule deletion of a user-owned job (storage + DB row).
+
+    Verifies ownership synchronously (404 if missing), blocks deletion while
+    the job is still processing (409), then schedules the actual storage +
+    row cleanup as a background task and returns 202.
+    """
+    user_id = await get_optional_user(request)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    supabase = request.app.state.supabase
+    if supabase is None:
+        raise HTTPException(status_code=502, detail="Supabase is not configured")
+
+    job_id_hex = _normalize_job_id(job_id)
+
+    status = await get_user_job_status(user_id, job_id_hex, supabase)
+    if status is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if status == "processing":
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete a job while it is still processing",
+        )
+
+    background_tasks.add_task(delete_user_job, user_id, job_id_hex, supabase)
+
+    return {"status": "deleting"}
 
 
 @router.get(

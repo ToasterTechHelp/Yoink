@@ -93,6 +93,17 @@ export async function getGuestJobResult(
   return res.json();
 }
 
+export async function deleteJob(jobId: string, token: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/v1/jobs/${jobId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to delete job" }));
+    throw new ApiError(err.detail || "Failed to delete job", res.status);
+  }
+}
+
 export async function submitFeedback(
   jobId: string,
   type: "bug" | "content_violation",

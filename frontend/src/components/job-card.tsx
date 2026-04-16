@@ -36,6 +36,7 @@ export function JobCard({ job, onOpen, onRename, onDelete }: JobCardProps) {
 
   const isCompleted = job.status === "completed";
   const isFailed = job.status === "failed";
+  const isProcessing = !isCompleted && !isFailed;
 
   return (
     <div className="flex items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/50">
@@ -73,7 +74,7 @@ export function JobCard({ job, onOpen, onRename, onDelete }: JobCardProps) {
         <ExternalLink className="h-4 w-4" />
       </Button>
 
-      {(onRename || onDelete) && (
+      {(onRename || onDelete) && !isProcessing && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="shrink-0">
@@ -87,7 +88,7 @@ export function JobCard({ job, onOpen, onRename, onDelete }: JobCardProps) {
                 Rename
               </DropdownMenuItem>
             )}
-            {onDelete && (
+            {onDelete && !isProcessing && (
               <DropdownMenuItem
                 className="text-destructive"
                 onClick={() => onDelete(job.id)}
