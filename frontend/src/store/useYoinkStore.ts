@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { User } from "@supabase/supabase-js";
 import type { ComponentData } from "@/lib/api";
+import type { GuestJob } from "@/lib/guest-storage";
 
 export interface SupabaseJob {
   id: string;
@@ -48,6 +49,10 @@ interface YoinkState {
   userJobs: SupabaseJob[];
   slotsUsed: number;
   setUserJobs: (jobs: SupabaseJob[]) => void;
+
+  // Guest jobs (from localStorage)
+  guestJobs: GuestJob[];
+  setGuestJobs: (jobs: GuestJob[]) => void;
 }
 
 export const useYoinkStore = create<YoinkState>((set) => ({
@@ -89,4 +94,8 @@ export const useYoinkStore = create<YoinkState>((set) => ({
   userJobs: [],
   slotsUsed: 0,
   setUserJobs: (jobs) => set({ userJobs: jobs, slotsUsed: jobs.length }),
+
+  // Guest jobs
+  guestJobs: [],
+  setGuestJobs: (jobs) => set({ guestJobs: jobs }),
 }));

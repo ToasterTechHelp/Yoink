@@ -1,5 +1,13 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 export function buildTransparentRenderUrl(src: string): string {
   const encodedSrc = encodeURIComponent(src);
   return `${API_URL}/api/v1/render/transparent.png?src=${encodedSrc}`;
@@ -79,8 +87,8 @@ export async function getGuestJobResult(
 ): Promise<GuestResult> {
   const res = await fetch(`${API_URL}/api/v1/jobs/${jobId}/result`);
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.detail || "Failed to get result");
+    const err = await res.json().catch(() => ({ detail: "Failed to get result" }));
+    throw new ApiError(err.detail || "Failed to get result", res.status);
   }
   return res.json();
 }

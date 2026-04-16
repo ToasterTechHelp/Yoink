@@ -18,12 +18,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { SupabaseJob } from "@/store/useYoinkStore";
+import type { GuestJob } from "@/lib/guest-storage";
+
+type JobCardJob = SupabaseJob | GuestJob;
 
 interface JobCardProps {
-  job: SupabaseJob;
+  job: JobCardJob;
   onOpen: (jobId: string) => void;
-  onRename: (job: SupabaseJob) => void;
-  onDelete: (jobId: string) => void;
+  onRename?: (job: JobCardJob) => void;
+  onDelete?: (jobId: string) => void;
 }
 
 export function JobCard({ job, onOpen, onRename, onDelete }: JobCardProps) {
@@ -70,28 +73,32 @@ export function JobCard({ job, onOpen, onRename, onDelete }: JobCardProps) {
         <ExternalLink className="h-4 w-4" />
       </Button>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="shrink-0">
-            <MoreVertical className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {isCompleted && (
-            <DropdownMenuItem onClick={() => onRename(job)}>
-              <Pencil className="mr-2 h-4 w-4" />
-              Rename
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem
-            className="text-destructive"
-            onClick={() => onDelete(job.id)}
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {(onRename || onDelete) && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="shrink-0">
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {isCompleted && onRename && (
+              <DropdownMenuItem onClick={() => onRename(job)}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Rename
+              </DropdownMenuItem>
+            )}
+            {onDelete && (
+              <DropdownMenuItem
+                className="text-destructive"
+                onClick={() => onDelete(job.id)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/client";
 import { uploadFile, pollJobStatus, getGuestJobResult } from "@/lib/api";
 import { useYoinkStore } from "@/store/useYoinkStore";
+import { getGuestJobs, saveGuestJob } from "@/lib/guest-storage";
 import type { GuestResult } from "@/lib/api";
 import type { SupabaseJob } from "@/store/useYoinkStore";
 
@@ -27,6 +28,8 @@ export default function Home() {
   const updateJobStatus = useYoinkStore((s) => s.updateJobStatus);
   const resetActiveJob = useYoinkStore((s) => s.resetActiveJob);
   const setGuestResult = useYoinkStore((s) => s.setGuestResult);
+  const guestJobs = useYoinkStore((s) => s.guestJobs);
+  const setGuestJobs = useYoinkStore((s) => s.setGuestJobs);
   const activeJobStatus = useYoinkStore((s) => s.activeJobStatus);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [sensitivityStep, setSensitivityStep] = useState(2);
@@ -40,10 +43,11 @@ export default function Home() {
     return data.session?.access_token;
   }, [supabase]);
 
-  // Fetch user jobs from Supabase
+  // Fetch user jobs from Supabase, or load guest jobs from localStorage
   useEffect(() => {
     if (!user || !supabase) {
       setUserJobs([]);
+      setGuestJobs(getGuestJobs());
       return;
     }
 
@@ -59,7 +63,7 @@ export default function Home() {
     };
 
     fetchJobs();
-  }, [user, supabase, setUserJobs]);
+  }, [user, supabase, setUserJobs, setGuestJobs]);
 
   // Poll active job
   const startPolling = useCallback(
@@ -98,6 +102,23 @@ export default function Home() {
                 components: guestData.components,
                 sourceType: guestData.source_type ?? "pdf",
               });
+
+              // Persist guest job metadata to localStorage
+              const categories = [
+                ...new Set(guestData.components.map((c) => c.category)),
+              ];
+              saveGuestJob({
+                id: jobId,
+                title: guestData.source_file,
+                created_at: new Date().toISOString(),
+                source_type: guestData.source_type ?? "pdf",
+                total_pages: guestData.total_pages,
+                total_components: guestData.total_components,
+                status: "completed",
+                categories,
+              });
+              setGuestJobs(getGuestJobs());
+
               router.push(`/jobs/${jobId}?guest=true`);
             }
 
@@ -111,7 +132,7 @@ export default function Home() {
         }
       }, 1500);
     },
-    [user, updateJobStatus, resetActiveJob, setGuestResult, setUserJobs, supabase, router]
+    [user, updateJobStatus, resetActiveJob, setGuestResult, setGuestJobs, setUserJobs, supabase, router]
   );
 
   // Cleanup polling on unmount
@@ -241,6 +262,10 @@ export default function Home() {
     );
   };
 
+  const handleOpenGuestJob = (jobId: string) => {
+    router.push(`/jobs/${jobId}?guest=true`);
+  };
+
   const isProcessing =
     activeJobStatus !== "idle" && activeJobStatus !== "failed" && activeJobStatus !== "completed";
 
@@ -303,7 +328,7 @@ export default function Home() {
                     key={job.id}
                     job={job}
                     onOpen={handleOpenJob}
-                    onRename={handleOpenRenameDialog}
+                    onRename={(job) => handleOpenRenameDialog(job as SupabaseJob)}
                     onDelete={handleDeleteJob}
                   />
                 ))}
@@ -313,9 +338,19 @@ export default function Home() {
                 No uploads yet. Drop a file above to get started.
               </p>
             )
+          ) : guestJobs.length > 0 ? (
+            <div className="space-y-2">
+              {guestJobs.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  onOpen={handleOpenGuestJob}
+                />
+              ))}
+            </div>
           ) : (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              Log in to view upload history.
+              No uploads yet. Drop a file above to get started.
             </p>
           )}
         </div>

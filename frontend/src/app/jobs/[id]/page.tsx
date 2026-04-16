@@ -10,7 +10,8 @@ import { CategoryFilter } from "@/components/category-filter";
 import { PageJump } from "@/components/page-jump";
 import { createClient } from "@/lib/supabase/client";
 import { useYoinkStore } from "@/store/useYoinkStore";
-import { submitFeedback, getGuestJobResult, buildTransparentRenderUrl } from "@/lib/api";
+import { submitFeedback, getGuestJobResult, buildTransparentRenderUrl, ApiError } from "@/lib/api";
+import { removeGuestJob, getGuestJobs } from "@/lib/guest-storage";
 import type { ComponentData } from "@/lib/api";
 import type { SupabaseJob } from "@/store/useYoinkStore";
 
@@ -27,6 +28,7 @@ export default function ResultsPage() {
 
   const supabase = useMemo(() => createClient(), []);
   const guestResult = useYoinkStore((s) => s.guestResult);
+  const setGuestJobs = useYoinkStore((s) => s.setGuestJobs);
   const user = useYoinkStore((s) => s.user);
 
   const [components, setComponents] = useState<ComponentData[]>([]);
@@ -82,7 +84,15 @@ export default function ResultsPage() {
           setActiveCategories(cats);
         } catch (error) {
           console.error(error);
-          toast.error("Failed to load guest job");
+          const isExpired =
+            error instanceof ApiError && (error.status === 404 || error.status === 410);
+          if (isExpired) {
+            removeGuestJob(jobId);
+            setGuestJobs(getGuestJobs());
+            toast.error("This job is no longer available");
+          } else {
+            toast.error("Failed to load results — please try again");
+          }
           router.push("/");
           return;
         }
@@ -136,7 +146,7 @@ export default function ResultsPage() {
     };
 
     loadData();
-  }, [jobId, isGuest, guestResult, user, supabase, router]);
+  }, [jobId, isGuest, guestResult, user, supabase, router, setGuestJobs]);
 
   // Derive unique categories
   const allCategories = useMemo(() => {
